@@ -36,6 +36,8 @@
 ;; whatever sample problem was last chosen.
 !(add-atom &params (seed     0))
 !(add-atom &params (maxGen   50))
+!(add-atom &params (initPolicy roulette))
+!(add-atom &params (seedPool legacy))
 !(add-atom &params (nDeme    1))
 
 ;; ---- Input table (boolean CSV path) ----

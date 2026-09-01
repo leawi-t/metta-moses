@@ -46,38 +46,37 @@
 ;; Returns:
    ;;   $updatedMetaPop: Updated metapopulation with the new optimized deme merged in.
 ; (: expandDeme (-> (OS (Exemplar $a)) Number Number Bool Symbol (TruthTableBScore $a) (-> Deme (TruthTableBScore $a) Instance $Scorer (Instance Deme $state)) $Scorer Number Number Number Number (ITable $a) Number Number Number (OS (Exemplar $a))))
-(= (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType)
+(= (expandDemeFromExemplar $exemplar $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType)
 (let*
    (
-    ;; ($_ (println! ""))
-    ;; ($_ (println! (MetaPop: $metaPop)))
-    ;; ($_ (println! "Selecting Exemplar"))
-    ($exemplar (selectExemplar $metaPop))
-    ;; ($_ (println! $exemplar))
-    ;; ($_ (println! "getting exemplar tree"))
-    ($tree (getExemplarTree $exemplar)) 
+    ($tree (getExemplarTree $exemplar))
+    ($score (getExemplarCscore $exemplar))
+    ($_ (println! (SelectedScore: $score)))
     ($_ (println! (SelectedTree: (preOrder $tree))))
-    ;; ($_ (println! "creating deme IDs"))
     ($demeIds (createDemeIds $nExpansion $nDeme))
-    ;; ($_ (println! $demeIds))
-    ; ($argLabels (getArgLabels $itable))
-    ;; ($_ (println! "Creating Deme"))
     ($demes (createDeme $nDeme $demeIds $tree $itable $fs-algo $prune-exemplar () $scorerType))
     )
     (map-atom $demes $deme (expandDemeHelper $deme $truthTableBScore $optimize))
    ))
 
+(= (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType)
+   (let $exemplar (selectExemplar $metaPop)
+        (expandDemeFromExemplar $exemplar $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType)))
+
 ;; Overloaded version for game strategy domain - 8 parameters
-(= (expandDeme $metaPop $nExpansion $nDeme $nGames $complexityRatio $targetCScore $optimize)
+(= (expandDemeFromExemplar $exemplar $nExpansion $nDeme $nGames $complexityRatio $targetCScore $optimize)
    (let*
       (
-         ($exemplar (trace! "Selecting Exemplar" (selectExemplar $metaPop)))
          ($tree (trace! "getting exemplar tree" (getExemplarTree $exemplar)))
          ($demeIds (trace! "creating deme IDs" (createDemeIds $nExpansion $nDeme)))
          ($demes (trace! "Creating Deme" (createDeme $nDeme $demeIds $tree)))
          ($gameContext ($nGames $complexityRatio $targetCScore))
       )
       (map-atom $demes $deme (expandDemeHelper $deme $gameContext $optimize))))
+
+(= (expandDeme $metaPop $nExpansion $nDeme $nGames $complexityRatio $targetCScore $optimize)
+   (let $exemplar (trace! "Selecting Exemplar" (selectExemplar $metaPop))
+        (expandDemeFromExemplar $exemplar $nExpansion $nDeme $nGames $complexityRatio $targetCScore $optimize)))
 
 ;; Unified helper for both Boolean and Strategy domains
 ;; Optimizes each deme in the list using the provided optimizer and context
@@ -122,6 +121,8 @@ $optimDeme
     (let*
      (
        ($_ (println! (Generation $maxGen)))
+       ($topDMPB (OS.getByIdx 0 $metaPop))
+       ($_ (println! (DiagnosticMetaPopBest: (getExemplarCscore $topDMPB))))
        ($optimizedDemes (case $context
                         ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "expand  deme returnn" (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable mi)))
                         (($nGames $opponentPolicy $complexityRatio) (trace! "expand deme return" (expandDeme $metaPop $nExpansion $nDeme $nGames $opponentPolicy $complexityRatio $maxScore $optimize))))))
@@ -147,7 +148,7 @@ $optimDeme
          (if (<= (param maxCandOutput) (OS.length $updatedMetaPop))
              (OS.getTopN (param maxCandOutput) $updatedMetaPop)
              $updatedMetaPop)
-         (runMoses (- $maxGen 1) $maxScore $updatedMetaPop $nExpansion $nDeme $context $optimize)))))
+         (runMoses (- $maxGen 1) $maxScore $updatedMetaPop (+ $nExpansion 1) $nDeme $context $optimize)))))
 
 
 ;; Some helpers specific to final testing
@@ -157,3 +158,12 @@ $optimDeme
 (= (cleanedExemplar (mkExemplar $tree $demeId $cscore (mkBScore $bscore))) ((preOrder $tree) (List.sum $bscore)))
 
 (= (printInstance (mkInst $inst)) (println! (List.listToExpr $inst)))
+
+
+(= (bootstrapDemes () $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType) ())
+(= (bootstrapDemes (cons $exemplar $rest) $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType)
+   (let* (
+          ($firstDemes (expandDemeFromExemplar $exemplar $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType))
+          ($restDemes (bootstrapDemes $rest (+ $nExpansion 1) $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType))
+         )
+         (concatT $firstDemes $restDemes)))

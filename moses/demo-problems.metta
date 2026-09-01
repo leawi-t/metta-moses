@@ -146,7 +146,71 @@
       )
       ()))
 
+
+(= (getSeedTrees $pool)
+   (case $pool
+     (
+       (legacy (cons (mkTree (mkNode true) ()) ()))
+       (pairs 
+         (cons (mkTree (mkNode true) ())
+         (cons (mkTree (mkNode AND) (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) ())))
+         (cons (mkTree (mkNode OR)  (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) ())))
+         (cons (mkTree (mkNode AND) (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X3) ()) ())))
+         (cons (mkTree (mkNode OR)  (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X3) ()) ())))
+         ()))))))
+       (pairs_nary
+         (cons (mkTree (mkNode true) ())
+         (cons (mkTree (mkNode AND) (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) ())))
+         (cons (mkTree (mkNode OR)  (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) ())))
+         (cons (mkTree (mkNode AND) (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X3) ()) ())))
+         (cons (mkTree (mkNode OR)  (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X3) ()) ())))
+         (cons (mkTree (mkNode AND) (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) (cons (mkTree (mkNode X3) ()) ()))))
+         (cons (mkTree (mkNode OR)  (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) (cons (mkTree (mkNode X3) ()) ()))))
+         ()))))))))
+     )
+)
+
+(= (scoreSeed $tree $cpxPen $truthTableBScore $worstBScore)
+   (let*
+      (
+        ($cScore (mkCscore (List.sum $worstBScore) 0 $cpxPen 0 (List.sum $worstBScore)))
+        ($exemplar (mkExemplar $tree (mkDemeId "0") $cScore $worstBScore))
+        ($deme (mkDeme (mkRep (mkKbMap (mkDscMp ())) $tree) ($exemplar) (mkDemeId "0")))
+        (($inst $optimDeme $state) (optimizeDemes $deme mi (mkInst ()) hillClimbing))
+        (((mkDeme $rep $sInst $demeId)) $optimDeme)
+        ($scoredExemplars (mapG cleanedExemplar $sInst))
+      )
+      (OS.getByIdx 0 $scoredExemplars)
+   )
+)
+
+(= (evaluateSeeds $trees $cpxPen $truthTableBScore $worstBScore)
+   (if (== $trees ())
+       ()
+       (let*
+          (
+            ($head (car-atom $trees))
+            ($tail (cdr-atom $trees))
+            ($headExemplar (scoreSeed $head $cpxPen $truthTableBScore $worstBScore))
+            ($tailExemplars (evaluateSeeds $tail $cpxPen $truthTableBScore $worstBScore))
+          )
+          (cons $headExemplar $tailExemplars)
+       )
+   )
+)
+
+(= (getEvaluatedMetaPop $pool $cpxPen $truthTableBScore $worstBScore)
+   (let*
+      (
+        ($trees (getSeedTrees $pool))
+        ($exemplarList (evaluateSeeds $trees $cpxPen $truthTableBScore $worstBScore))
+      )
+      (listToOS $exemplarList)
+   )
+)
+
 (= (moses-run)
+
    (let*
       (
         ;; Pull every input from the registry up-front so the body
@@ -173,10 +237,24 @@
         ($worstPossibleScore (List.sum $worstPossibleBScore))
         ($bestPosssibleScore (getBestPossibleScore))
         ($_ (println! (BestPossibleScore: $bestPosssibleScore)))
-        ($metaPop ((mkExemplar (mkTree (mkNode true) ()) (mkDemeId "1") (mkCscore $worstPossibleScore 0 $cpxPen 0 $worstPossibleScore) ($ctor $worstPossibleBScore))))
-        ($result (runMoses $maxGen $bestPosssibleScore $metaPop 0 $nDeme
-              (False $fsAlgo $truthTableBScore $itable)
-              $optimizer))
+        ($poolType (param seedPool))
+        ($policy   (param initPolicy))
+        
+        ($metaPop (getEvaluatedMetaPop $poolType $cpxPen $truthTableBScore $worstPossibleBScore))
+        ($numSeeds (OS.length $metaPop))
+        ($context (False $fsAlgo $truthTableBScore $itable))
+
+        ($result
+           (if (== $policy bootstrap)
+               (let* (
+                  ($bootDemes (bootstrapDemes $metaPop 0 $nDeme False $fsAlgo $truthTableBScore $optimizer $itable mi))
+                  ($bootMetaPop (mergeDemes $bootDemes $itable $metaPop))
+               )
+               (runMoses (- $maxGen $numSeeds) $bestPosssibleScore $bootMetaPop $numSeeds $nDeme $context $optimizer)
+               )
+               (runMoses $maxGen $bestPosssibleScore $metaPop 0 $nDeme $context $optimizer)
+           )
+        )
         ;; ($_ (println! (Result: $result)))
         ($newR (mapG cleanedExemplar $result))
         ($_ (cut)) ;; INFO: This gives few extra seconds performance gain. Do not remove.

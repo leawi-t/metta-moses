@@ -7,7 +7,9 @@
 !(import! &self ../moses.metta)
 
 ;; Set parameters for a tiny smoke test
-!(set-param maxGen 2)
+;; A bootstrap budget must cover every seed in the selected pool.  The pair
+;; pool has five seeds, so this run consumes its entire budget in bootstrap.
+!(set-param maxGen 5)
 !(set-param nDeme 1)
 !(set-param problem parity3)
 

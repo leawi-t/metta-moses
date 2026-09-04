@@ -171,42 +171,38 @@
   )
 )
 
-(= (scoreSeed $tree $cpxPen $truthTableBScore $worstBScore)
+(= (scoreSeed $tree $itable $cpxPen $demeId)
    (let*
       (
-        ($cScore (mkCscore (List.sum $worstBScore) 0 $cpxPen 0 (List.sum $worstBScore)))
-        ($exemplar (mkExemplar $tree (mkDemeId "0") $cScore $worstBScore))
-        ($deme (mkDeme (mkRep (mkKbMap (mkDscMp ())) $tree) ($exemplar) (mkDemeId "0")))
-        (($inst $optimDeme $state) (optimizeDemes $deme mi (mkInst ()) hillClimbing))
-        (((mkDeme $rep $sInst $demeId)) $optimDeme)
-        ($scoredExemplars (mapG cleanedExemplar $sInst))
+        ($bscore (scoreTree $itable $tree &bscoreCache))
+        ($cscore (getCscore $tree $cpxPen $bscore))
       )
-      (OS.getByIdx 0 $scoredExemplars)
+      (mkExemplar $tree $demeId $cscore $bscore)
    )
 )
 
-(= (evaluateSeeds $trees $cpxPen $truthTableBScore $worstBScore)
+(= (evaluateSeeds $trees $itable $cpxPen $demeId)
    (if (== $trees ())
        ()
        (let*
           (
             ($head (car-atom $trees))
             ($tail (cdr-atom $trees))
-            ($headExemplar (scoreSeed $head $cpxPen $truthTableBScore $worstBScore))
-            ($tailExemplars (evaluateSeeds $tail $cpxPen $truthTableBScore $worstBScore))
+            ($headExemplar (scoreSeed $head $itable $cpxPen $demeId))
+            ($tailExemplars (evaluateSeeds $tail $itable $cpxPen $demeId))
           )
           (cons $headExemplar $tailExemplars)
        )
    )
 )
 
-(= (getEvaluatedMetaPop $pool $cpxPen $truthTableBScore $worstBScore)
+(= (getEvaluatedMetaPop $pool $itable $cpxPen $demeId)
    (let*
       (
         ($trees (getSeedTrees $pool))
-        ($exemplarList (evaluateSeeds $trees $cpxPen $truthTableBScore $worstBScore))
+        ($exemplarList (evaluateSeeds $trees $itable $cpxPen $demeId))
       )
-      (listToOS $exemplarList)
+      $exemplarList
    )
 )
 
@@ -241,17 +237,25 @@
         ($poolType (param seedPool))
         ($policy   (param initPolicy))
         
-        ($metaPop (getEvaluatedMetaPop $poolType $cpxPen $truthTableBScore $worstPossibleBScore))
+        ($metaPop (getEvaluatedMetaPop $poolType $itable $cpxPen (mkDemeId "0")))
         ($numSeeds (OS.length $metaPop))
         ($context (False $fsAlgo $truthTableBScore $itable))
 
         ($result
            (if (== $policy bootstrap)
-               (let* (
-                  ($bootDemes (bootstrapDemes $metaPop 0 $nDeme False $fsAlgo $truthTableBScore $optimizer $itable mi))
-                  ($bootMetaPop (mergeDemes $bootDemes $itable $metaPop))
-               )
-               (runMoses (- $maxGen $numSeeds) $bestPosssibleScore $bootMetaPop $numSeeds $nDeme $context $optimizer)
+               (if (>= $maxGen $numSeeds)
+                   (let* (
+                      ($remainingGens (- $maxGen $numSeeds))
+                      ($bootDemes (bootstrapDemes $metaPop 0 $nDeme False $fsAlgo $truthTableBScore $optimizer $itable mi))
+                      ($bootMetaPop (mergeDemes $bootDemes $itable $metaPop))
+                   )
+                   (runMoses $remainingGens $bestPosssibleScore $bootMetaPop $numSeeds $nDeme $context $optimizer)
+                   )
+                   (let* (
+                      ($_ (println! (BootstrapBudgetTooSmall: $maxGen seed-count: $numSeeds falling-back-to-roulette)))
+                   )
+                   (runMoses $maxGen $bestPosssibleScore $metaPop 0 $nDeme $context $optimizer)
+                   )
                )
                (runMoses $maxGen $bestPosssibleScore $metaPop 0 $nDeme $context $optimizer)
            )
@@ -296,4 +300,3 @@
         ($_5 (set-param problem $problem))
       )
       (moses)))
-

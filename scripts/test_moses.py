@@ -87,14 +87,14 @@ class GPRunner:
 
             injected_lines.append(modified_line)
 
-        script_content = "\n".join(injected_lines)
+        script_content = "\n".join(injected_lines) + "\n"
 
         # We name it generic 'script.code'. Change extension if your engine needs specific one (e.g., .scm, .cpp)
         script_path = os.path.join(run_dir, "script_to_run.metta")
         with open(script_path, "w") as f:
             f.write(script_content)
 
-        return "script_to_run.metta"
+        return script_path
 
     def _parse_lisp_results(self, text_block: str) -> List[Dict[str, Any]]:
         """
@@ -231,28 +231,42 @@ class GPRunner:
                 "$fsAlgo": feature_selector,
                 "$nDeme": n_deme,
                 "$outputDir": run_dir,
+            "$pool": args.pool,
             }
             script_path = self._inject_code(run_dir, params)
 
             # 2. Execute Subprocess
             # Passing the script path as argument to the engine
             cmd = [engine_executable, script_path, *engine_args]
+            cmd.extend([
+                f"--seed={seed}",
+                f"--problem={problem}",
+                f"--maxGen={max_gens}",
+                f"--nDeme={n_deme}",
+                f"--fsAlgo={feature_selector}"
+            ])
 
             print(
                 f"[GPRunner] Seed {seed}: Running {problem} with {feature_selector} (Demes: {n_deme})..."
             )
 
             # If timeout_sec is None, subprocess waits indefinitely
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout_sec,
-                cwd=run_dir,  # Run inside the sandbox dir context
-            )
+            log_filepath = os.path.join(log_dir, f"stdout_maxgen_{max_gens}_seed_{seed}.log")
+            with open(log_filepath, "w") as f_out:
+                result = subprocess.run(
+                    cmd,
+                    stdout=f_out,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=timeout_sec,
+                    cwd=os.getcwd(),
+                )
+            with open(log_filepath, "r") as f_in:
+                result.stdout = f_in.read()
 
             # 3. Handle Process Level Errors
             if result.returncode != 0:
+
                 # Process crashed
                 return {
                     "seed": seed,
@@ -283,7 +297,7 @@ class GPRunner:
             with open(
                 os.path.join(
                     log_dir,
-                    f"stdout_maxgen_{args.max_gens}_seed_{seed}.log",
+                    f"stdout_maxgen_{max_gens}_seed_{seed}.log",
                 ),
                 "w",
             ) as f:
@@ -292,6 +306,7 @@ class GPRunner:
             return output
 
         except subprocess.TimeoutExpired:
+            os.system("killall -9 swipl >/dev/null 2>&1")
             return {
                 "seed": seed,
                 "problem": problem,
@@ -372,6 +387,7 @@ if __name__ == "__main__":
     parser.add_argument("--template", help="Path to the master template file")
     parser.add_argument("--problem", help="Problem name (e.g. parity4)")
     parser.add_argument("--fs", help="Feature Selector (e.g. smd, simple)")
+    parser.add_argument("--pool", help="Seed pool (e.g. legacy, stumps5)")
     parser.add_argument("--seed", type=int, help="Starting seed")
 
     # Optional Arguments (Defaults are handled via set_defaults above)

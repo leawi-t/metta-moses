@@ -168,6 +168,7 @@
          (cons (mkTree (mkNode OR)  (cons (mkTree (mkNode X1) ()) (cons (mkTree (mkNode X2) ()) (cons (mkTree (mkNode X3) ()) ()))))
          ()))))))))
      )
+  )
 )
 
 (= (scoreSeed $tree $cpxPen $truthTableBScore $worstBScore)

@@ -14,4 +14,13 @@ run_python_tests.py
 
 *.html
 
+# Local experiment outputs and ad-hoc debugging artifacts.
+*.pid
+*.bak
+temp*.log
+test_native_error.log
+majority5_*.log
+parity4_*.log
+sandbox_*/
+
 notes/

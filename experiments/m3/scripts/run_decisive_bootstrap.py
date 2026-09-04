@@ -6,8 +6,10 @@ import re
 import json
 import time
 import argparse
+import tempfile
+from pathlib import Path
 
-os.chdir('/home/nonplds/projects/metta-projects/metta-moses')
+REPO_ROOT = Path(__file__).resolve().parents[2]
 FPATH = 'moses/demo-problems.metta'
 
 SEEDS_P = """\
@@ -98,9 +100,46 @@ NEW_MOSES_RUN = """(= (moses-run)
       )
       (FinalResult $newR)))"""
       
-def apply_condition(seeds_code, helpers_code):
-    subprocess.run(["git", "checkout", FPATH], check=True, capture_output=True)
-    with open(FPATH, 'r') as f:
+def require_clean_worktree():
+    """Avoid treating an active developer checkout as disposable experiment state."""
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=no"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout.strip():
+        raise RuntimeError(
+            "Refusing to run from a dirty checkout. Commit, stash, or remove local "
+            "changes before starting the historical reproduction."
+        )
+
+
+def add_temporary_worktree():
+    path = Path(tempfile.mkdtemp(prefix="metta-moses-m3-"))
+    try:
+        subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "worktree", "add", "--detach", str(path), "HEAD"],
+            check=True,
+        )
+    except Exception:
+        shutil.rmtree(path, ignore_errors=True)
+        raise
+    return path
+
+
+def remove_temporary_worktree(path):
+    subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "worktree", "remove", "--force", str(path)],
+        check=False,
+    )
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def apply_condition(repo_root, seeds_code, helpers_code):
+    source_path = repo_root / FPATH
+    subprocess.run(["git", "-C", str(repo_root), "checkout", "--", FPATH], check=True, capture_output=True)
+    with source_path.open('r') as f:
         content = f.read()
 
     pattern = re.compile(r'\(\=\s*\(moses-run\).*?\(FinalResult \$newR\)\)\)', re.DOTALL)
@@ -111,7 +150,7 @@ def apply_condition(seeds_code, helpers_code):
     new_block = helpers_code + "\n" + seeds_code + "\n\n" + NEW_MOSES_RUN
     content = pattern.sub(new_block, content)
     
-    with open(FPATH, 'w') as f:
+    with source_path.open('w') as f:
         f.write(content)
 
 def parse_score(log_content):
@@ -120,18 +159,22 @@ def parse_score(log_content):
         return float(matches[-1])
     return None
 
-def run_condition(name, out_dir, init_policy, seed_count):
+def run_condition(repo_root, name, out_dir, init_policy, seed_count):
     os.makedirs(out_dir, exist_ok=True)
     
     # Save a copy of the generated program for inspection
-    shutil.copy(FPATH, os.path.join(out_dir, "moses.metta"))
+    shutil.copy(repo_root / FPATH, os.path.join(out_dir, "moses.metta"))
     
     for seed in range(seed_count):
         print(f"[{name}] Running seed {seed}/{seed_count-1}...")
         
         start_time = time.time()
-        cmd = ["bash", "-c", f"/home/nonplds/projects/metta-projects/metta-moses/run_petta.sh moses.metta -s --problem=parity3 --seed={seed} --initPolicy={init_policy} --maxGen=50 --nDeme=1"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        cmd = [
+            str(repo_root / "run_petta.sh"), "moses.metta", "-s",
+            "--problem=parity3", f"--seed={seed}",
+            f"--initPolicy={init_policy}", "--maxGen=50", "--nDeme=1",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_root)
         wall_time = time.time() - start_time
         
         with open(f"{out_dir}/seed_{seed}.log", "w") as f:
@@ -155,10 +198,10 @@ def run_condition(name, out_dir, init_policy, seed_count):
         with open(f"{out_dir}/seed_{seed}.json", "w") as f:
             json.dump(summary, f, indent=2)
 
-def save_config(out_dir):
+def save_config(repo_root, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     try:
-        git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        git_hash = subprocess.check_output(["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True).strip()
     except:
         git_hash = "unknown"
     
@@ -171,7 +214,8 @@ def save_config(out_dir):
         "complexityRatio": 3.5,
         "nEval": 10000,
         "capCoef": 50,
-        "discProbe": False
+        "discProbe": False,
+        "runner": "historical code injection",
     }
     with open(os.path.join(out_dir, "config.json"), "w") as f:
         json.dump(config, f, indent=2)
@@ -179,10 +223,21 @@ def save_config(out_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", choices=["smoke", "screen", "confirm"], required=True)
+    parser.add_argument(
+        "--output-dir",
+        default="sandbox_bootstrap_decisive",
+        help="Empty directory, relative to the repository root, for new results.",
+    )
     args = parser.parse_args()
     
-    base_dir = "sandbox_bootstrap_decisive"
-    save_config(base_dir)
+    require_clean_worktree()
+    base_dir = REPO_ROOT / args.output_dir
+    if base_dir.exists() and any(base_dir.iterdir()):
+        raise RuntimeError(
+            f"Refusing to overwrite non-empty output directory: {base_dir}. "
+            "Pass --output-dir with a new empty location."
+        )
+    save_config(REPO_ROOT, base_dir)
     
     seed_count = 1
     run_P = True
@@ -196,20 +251,21 @@ def main():
         seed_count = 30
         run_P = False # Confirmation only runs N
     
+    worktree = add_temporary_worktree()
     try:
         if run_P:
-            apply_condition(SEEDS_P, HELPERS)
-            run_condition("P-R", os.path.join(base_dir, f"p_roulette_n{seed_count}"), "roulette", seed_count)
-            run_condition("P-B", os.path.join(base_dir, f"p_bootstrap_n{seed_count}"), "bootstrap", seed_count)
+            apply_condition(worktree, SEEDS_P, HELPERS)
+            run_condition(worktree, "P-R", base_dir / f"p_roulette_n{seed_count}", "roulette", seed_count)
+            run_condition(worktree, "P-B", base_dir / f"p_bootstrap_n{seed_count}", "bootstrap", seed_count)
             
         if run_N:
-            apply_condition(SEEDS_N, HELPERS)
-            run_condition("N-R", os.path.join(base_dir, f"n_roulette_n{seed_count}"), "roulette", seed_count)
-            run_condition("N-B", os.path.join(base_dir, f"n_bootstrap_n{seed_count}"), "bootstrap", seed_count)
+            apply_condition(worktree, SEEDS_N, HELPERS)
+            run_condition(worktree, "N-R", base_dir / f"n_roulette_n{seed_count}", "roulette", seed_count)
+            run_condition(worktree, "N-B", base_dir / f"n_bootstrap_n{seed_count}", "bootstrap", seed_count)
             
     finally:
-        subprocess.run(["git", "checkout", FPATH], capture_output=True)
-        print("Done! Source restored.")
+        remove_temporary_worktree(worktree)
+        print("Done! Temporary worktree removed; active source was unchanged.")
 
 if __name__ == "__main__":
     main()

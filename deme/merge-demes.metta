@@ -238,6 +238,28 @@
 ;; Return: Updated and resized metapopulation.
 ;; Hyperparameters now flow via &params; the only positional args are
 ;; the data being merged (demes, scoring context, metapop).
+(= (countBetterRawWorsePen () $topRaw $topPen) 0)
+(= (countBetterRawWorsePen (cons $x $rest) $topRaw $topPen)
+   (let* (($cscore (getSInstScore $x))
+          ($raw (getScore $cscore))
+          ($pen (getPenScore $cscore)))
+      (if (and (> $raw $topRaw) (< $pen $topPen))
+          (+ 1 (countBetterRawWorsePen $rest $topRaw $topPen))
+          (countBetterRawWorsePen $rest $topRaw $topPen))))
+
+(= (recordBetterRawCandidates $rep $demeId () $topRaw $topPen) ())
+(= (recordBetterRawCandidates $rep $demeId (cons $x $rest) $topRaw $topPen)
+   (let* (($cscore (getSInstScore $x))
+          ($raw (getScore $cscore))
+          ($pen (getPenScore $cscore)))
+      (if (and (> $raw $topRaw) (< $pen $topPen))
+          (let* (($inst (getInst $x))
+                 ($tree (getCandidate $rep $demeId $inst))
+                 ($cpxy (getComp $cscore))
+                 ($_ (py-call (logger_helper.register_deme_candidate (preOrder $tree) $raw $pen $cpxy))))
+             (recordBetterRawCandidates $rep $demeId $rest $topRaw $topPen))
+          (recordBetterRawCandidates $rep $demeId $rest $topRaw $topPen))))
+
 ; (: mergeDemes (-> Expression (ITable $a) (OS (Exemplar $a)) (OS (Exemplar $a))))
 (= (mergeDemes $demes $scoringContext $metapop)
     (if (== $demes ()) $metapop
@@ -255,8 +277,16 @@
             ($unqCandidates (keepTopUniqueCandidates $rep $demeId $sortedSInstList))  ;;remove duplicates and limits the size by keeping the top scoring
             ($_ (println! (KeptUniqueTopCandidates NewSize: (List.length $unqCandidates))))
             ($trimmedDeme (trimDownDeme $unqCandidates))  ;; further trims the deme
-            ;; ($_ (println! (DemeToTrees Starting...)))
             ($_ (println! (TrimmedDownDeme: (List.length $trimmedDeme))))
+            ($topExemplar (OS.getByIdx 0 $metapop))
+            ($topScore (getExemplarCscore $topExemplar))
+            ($topRaw (getScore $topScore))
+            ($topPen (getPenScore $topScore))
+            ($cntBefore (countBetterRawWorsePen $unqCandidates $topRaw $topPen))
+            ($cntAfter (countBetterRawWorsePen $trimmedDeme $topRaw $topPen))
+            ($culledCnt (- $cntBefore $cntAfter))
+            ($_ (py-call (logger_helper.log_deme_culling $demeId $cntBefore $culledCnt)))
+            ($_rec (recordBetterRawCandidates $rep $demeId $unqCandidates $topRaw $topPen))
             ($potCandidates (demeToTrees (mkDeme $rep (mkSInstSet $trimmedDeme) $demeId) $scoringContext)) ;;convert instances to trees
             ($_ (println! (Before getNewCandidates: (List.length $potCandidates))))
             ;; ($_ (println! (Metapop: $metapop)))

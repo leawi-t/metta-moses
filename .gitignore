@@ -15,3 +15,10 @@ run_python_tests.py
 *.html
 
 notes/
+
+# Experiment / Benchmark JSON dumps
+*.json
+!moses/configs/*.json
+*.patched
+*.unpatched
+repomix-output.xml

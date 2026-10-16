@@ -65,6 +65,10 @@
 ;; pass. Default False mirrors the shipped behaviour after the test-suite
 ;; adjustment in d4d8529; flip to True to opt in via --discProbe=True.
 !(add-atom &params (discProbe False))
+!(add-atom &params (logicalPermRatio 1.0))
+!(add-atom &params (permPolarityMode classic))
+
+
 
 ;; ---- Metapopulation management ----
 !(add-atom &params (capCoef 50))
@@ -102,6 +106,7 @@
 
 ;; ---- Exemplar selection ----
 !(add-atom &params (compxyTemp 6))
+!(add-atom &params (maxRevisits 1))
 
 ;; ---- Caching ----
 !(add-atom &params (defaultCacheSize 60))

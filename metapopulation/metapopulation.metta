@@ -114,3 +114,25 @@
 ;; Return: $tree
 ; (: getExemplarTree (-> (Exemplar $a) (Tree $a)))
 (= (getExemplarTree (mkExemplar $tree $demeId $cscore $bscore)) $tree)
+
+;; Extract maximum raw score in a metapopulation
+(= (getMetapopMaxRaw ()) -1000000000)
+(= (getMetapopMaxRaw (cons $ex $rest))
+   (let* (($exScore (getExemplarCscore $ex))
+          ($raw (getScore $exScore))
+          ($restMax (getMetapopMaxRaw $rest)))
+      (if (> $raw $restMax) $raw $restMax)))
+
+;; Extract (bestRaw bestRawComplexity) in a metapopulation
+(= (getMetapopBestRawInfo ()) (-1000000000 0))
+(= (getMetapopBestRawInfo (cons $ex $rest))
+   (let* (($exScore (getExemplarCscore $ex))
+          ($raw (getScore $exScore))
+          ($cpxy (getComp $exScore))
+          (($restRaw $restCpxy) (getMetapopBestRawInfo $rest)))
+      (if (> $raw $restRaw)
+          ($raw $cpxy)
+          (if (and (== $raw $restRaw) (< $cpxy $restCpxy))
+              ($raw $cpxy)
+              ($restRaw $restCpxy)))))
+

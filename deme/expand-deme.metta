@@ -49,13 +49,13 @@
 (= (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable $scorerType)
 (let*
    (
-    ;; ($_ (println! ""))
-    ;; ($_ (println! (MetaPop: $metaPop)))
-    ;; ($_ (println! "Selecting Exemplar"))
     ($exemplar (selectExemplar $metaPop))
-    ;; ($_ (println! $exemplar))
-    ;; ($_ (println! "getting exemplar tree"))
     ($tree (getExemplarTree $exemplar)) 
+    ($score (getExemplarCscore $exemplar))
+    ($raw (getScore $score))
+    ($pen (getPenScore $score))
+    ($_rec (py-call (visited_tracker.record_visit (preOrder $tree))))
+    ($_ (py-call (logger_helper.log_exemplar $nExpansion (preOrder $tree) $raw $pen)))
     ($_ (println! (SelectedTree: (preOrder $tree))))
     ;; ($_ (println! "creating deme IDs"))
     ($demeIds (createDemeIds $nExpansion $nDeme))
@@ -112,6 +112,12 @@ $optimDeme
 ; (: runMoses (-> Number Number (OS (Exemplar $a)) Number Number $Context $Optimize (OS (Exemplar $a))))
 ;; TODO: $nEval isn't being used. Increase it so that it works as expected.
 ;; To enable that, we may need to change our termination condition so that the generation is equivalent to the number of expansion as well.
+(= (registerMetapopSurvivors ()) ())
+(= (registerMetapopSurvivors (cons $ex $rest))
+   (let* (($tree (getExemplarTree $ex))
+          ($_ (py-call (logger_helper.register_metapop_exemplar (preOrder $tree)))))
+      (registerMetapopSurvivors $rest)))
+
 ;; The number of expansions in the open cog classic is equivalent to the number of deme expansions. That looks like the same thing we are doing here but not sure.
 (= (runMoses $maxGen $maxScore $metaPop $nExpansion $nDeme $context $optimize)
 (if (== $maxGen 0)
@@ -122,18 +128,20 @@ $optimDeme
     (let*
      (
        ($_ (println! (Generation $maxGen)))
-       ($optimizedDemes (case $context
-                        ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "expand  deme returnn" (expandDeme $metaPop $nExpansion $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable mi)))
-                        (($nGames $opponentPolicy $complexityRatio) (trace! "expand deme return" (expandDeme $metaPop $nExpansion $nDeme $nGames $opponentPolicy $complexityRatio $maxScore $optimize))))))
+        ($optimizedDemes (case $context
+                        ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "expand  deme returnn" (expandDeme $metaPop $maxGen $nDeme $prune-exemplar $fs-algo $truthTableBScore $optimize $itable mi)))
+                        (($nGames $opponentPolicy $complexityRatio) (trace! "expand deme return" (expandDeme $metaPop $maxGen $nDeme $nGames $opponentPolicy $complexityRatio $maxScore $optimize))))))
        (((mkDeme $rep $sInst $demeId)) $optimizedDemes)
        ($_ (println! (OptimizedDeme: (List.length (second $sInst)))))
        ($updatedMetaPop (case $context
                         ((($prune-exemplar $fs-algo $truthTableBScore $itable) (trace! "Merging Deme" (mergeDemes $optimizedDemes $itable $metaPop)))
                         (($nGames $opponentPolicy $complexityRatio) (trace! "Merging Deme" (mergeDemes $optimizedDemes ($nGames $opponentPolicy) $metaPop))))))
-       ;; ($_ (println! (Updated MetaPop: $updatedMetaPop)))
-       ($top (OS.getByIdx 0 $metaPop))
-       ;; ($_ (println! (Top Exemplar before expansion: $top)))
+       (($bestRawInMetapop $bestRawComplexity) (getMetapopBestRawInfo $updatedMetaPop))
+       ($top (OS.getByIdx 0 $updatedMetaPop))
        ($topScore (getExemplarCscore $top))
+       ($topPen (getPenScore $topScore))
+       ($_surv (registerMetapopSurvivors $updatedMetaPop))
+       ($_ (py-call (logger_helper.finalize_generation_stats $maxGen $bestRawInMetapop $bestRawComplexity $topPen)))
        ;; ($_ (println! (topscore: $topScore)))
        ;; ($_ (println! (Top: $topScore Max: $maxScore (cScore>= $topScore $maxScore))))
        ($nothing (clearSpace &treeSpace))

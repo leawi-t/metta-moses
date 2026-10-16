@@ -20,6 +20,16 @@
                (False True True False True False False True True False False True False True True False))
               (X1 X2 X3 X4 Out)))
 
+;; 5-Bit Parity: Output is True if the number of True inputs is odd. Labels: X1..X5, Out
+(= (parity5) (mkITable
+              ((False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True)
+               (False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True)
+               (False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True)
+               (False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True)
+               (False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True)
+               (False True True False True False False True True False False True False True True False True False False True False True True False False True True False True False False True))
+              (X1 X2 X3 X4 X5 Out)))
+
 ;; Logic: Output is 1 if any input is 1
 ;; Example: (OR X1 X2 X3)
 (= (disjunction3) (mkITable
@@ -49,6 +59,18 @@
                  (False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True)
                  (False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True))
                 (X1 X2 X3 X4 X5 Out)))
+
+;; 7-Bit Majority: Output is True if 4 or more of 7 inputs are True
+(= (majority7) (mkITable
+                ((False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True)
+                 (False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True True)
+                 (False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True False False False False False False False False False False False False False False False False True True True True True True True True True True True True True True True True)
+                 (False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True False False False False False False False False True True True True True True True True)
+                 (False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True)
+                 (False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True)
+                 (False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True)
+                 (False False False False False False False False False False False False False False False True False False False False False False False True False False False True False True True True False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True False False False True False True True True False True True True True True True True False True True True True True True True True True True True True True True True)))
+                (X1 X2 X3 X4 X5 X6 X7 Out)))
 
 ;; 3-Bit Multiplexer: - Input 1 is Address (Addr)
 ;;                    - Input 2 is Data 0 (D0)
@@ -160,6 +182,7 @@
         ($optimizer (optimizer-for $optAlgo))
 
         ($srp (py-call (random.seed $seed)))
+        ($_reset (py-call (logger_helper.reset)))
         ;; genCount feeds the cap-size formula inside resizeMetapop; it
         ;; is conceptually the initial $maxGen and stays constant across
         ;; the recursion, so we seed it once here.
@@ -179,6 +202,7 @@
               $optimizer))
         ;; ($_ (println! (Result: $result)))
         ($newR (mapG cleanedExemplar $result))
+        ($_sum (py-call (logger_helper.log_summary)))
         ($_ (cut)) ;; INFO: This gives few extra seconds performance gain. Do not remove.
       )
       (FinalResult $newR)))

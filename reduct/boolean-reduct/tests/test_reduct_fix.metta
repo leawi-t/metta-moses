@@ -1,0 +1,22 @@
+!(import! &self ../../../utilities/general-helpers)
+!(import! &self ../../../utilities/list-methods)
+!(import! &self ../../../utilities/tree)
+!(import! &self ../../../scoring/boolean-ops)
+!(import! &self ../../../reduct/boolean-reduct/rte-helpers)
+!(import! &self ../../../reduct/boolean-reduct/cut-unnecessary-or)
+!(import! &self ../../../reduct/boolean-reduct/cut-unnecessary-and)
+!(import! &self ../../../reduct/boolean-reduct/n-ary-propagate-not)
+!(import! &self ../../../reduct/boolean-reduct/n-ary-gather-junctors)
+!(import! &self ../../../reduct/boolean-reduct/delete-inconsistent-handle)
+!(import! &self ../../../reduct/boolean-reduct/zero-constraint-subsumption)
+!(import! &self ../../../reduct/boolean-reduct/one-constraint-subsumption)
+!(import! &self ../../../reduct/boolean-reduct/promote-common-constraints)
+!(import! &self ../../../reduct/boolean-reduct/reduce-to-elegance)
+
+!(callPredicate (Predicate (consult "moses/tests/rte-helpers-fast.pl")))
+
+!(assertEqual (reduce-to (OR FALSE (AND X2 (AND X2 X2 X3) (NOT X3)))) FALSE)
+!(assertEqual (reduce-to (OR (AND X2 (AND X2 X2 X3) (NOT X3)) FALSE)) FALSE)
+!(assertEqual (reduce-to (OR FALSE FALSE)) FALSE)
+
+!(println! "Reduct fix tests passed successfully!")

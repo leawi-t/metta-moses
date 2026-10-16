@@ -32,8 +32,11 @@
           ($isConjunct   (and (== $parentHead AND) (!= $withoutPOA $parent)))
           ;; A FALSE alternative just leaves, but if it was the LAST one the OR itself is
           ;; FALSE and this is the only place that knows it -- emit here, or it reads as a
-          ;; dangling placeholder further up and gets deleted.
-          ($withoutPOA'  (if (and (== $parentHead OR) (== $withoutPOA (OR)))
+          ;; dangling placeholder further up and gets deleted. A remaining OR with no live
+          ;; alternatives is also canonical FALSE, not a residual (OR FALSE) branch.
+          ($withoutPOA'  (if (and (== $parentHead OR)
+                                  (or (== $withoutPOA (OR))
+                                      (== (applyConstantLaws $withoutPOA) FALSE)))
                              FALSE
                              $withoutPOA))
           ; ($_ (println! (===Inside DeleteInconsistentHandle===)))

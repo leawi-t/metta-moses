@@ -465,12 +465,15 @@
        ($current $current False)
    (if (== $current (OR))
        ((OR) (OR) False)
+   (let $currentConst (applyConstantLaws $current)
+   (if (isConstant $currentConst)
+       ($currentConst $currentConst True)
    (let*
          (
             ;; ($_ (println! (==== Inside ApplyReduce ====)))
             ;; ($_ (println! (Parameters ==> Parent: $parent Current: $current Applied: $applied)))
             
-            ($propNotExpr (propagateNot $current))
+            ($propNotExpr (propagateNot $currentConst))
             ($gatherJunctorExpr (gatherJunctors $propNotExpr))
             ($initAdd (addAND $gatherJunctorExpr))
             ($wrappedAdd (addAND $initAdd True))
@@ -491,7 +494,7 @@
          ;; emitted needs this whole-tree pass. $rteApplied passes through: this is cleanup.
          (let ($rteParent $rteCurrent $rteApplied) (reduceToElegance $finalParent $finalAdd () ())
               ((applyConstantLaws $rteParent) (applyConstantLaws $rteCurrent) $rteApplied))
-         ))))
+         ))))))
 
 (= (removeAndNodesFromGuards $expr)
    (if (== (get-metatype $expr) Symbol)

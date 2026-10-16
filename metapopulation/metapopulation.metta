@@ -136,3 +136,29 @@
               ($raw $cpxy)
               ($restRaw $restCpxy)))))
 
+;; Rescore an individual Cscore with a new complexity ratio
+(= (rescoreCscore (mkCscore $scor $cpxy $cp $up $pen) $newRatio)
+   (let* (($newCp (/ $cpxy $newRatio))
+          ($newPen (- $scor $newCp)))
+      (mkCscore $scor $cpxy $newCp $up $newPen)))
+
+;; Rescore an individual Exemplar
+(= (rescoreExemplar (mkExemplar $tree $demeId $cscore $bscore) $newRatio)
+   (mkExemplar $tree $demeId (rescoreCscore $cscore $newRatio) $bscore))
+
+;; Map across metapopulation to rescore all exemplars
+(= (rescoreMetapopToExprList () $newRatio) ())
+(= (rescoreMetapopToExprList (cons $ex $rest) $newRatio)
+   (cons (rescoreExemplar $ex $newRatio) (rescoreMetapopToExprList $rest $newRatio)))
+
+;; Rebuild an Ordered Set from a rescored list of exemplars using compareExemplar
+(= (insertAllExemplars () $mp) $mp)
+(= (insertAllExemplars (cons $ex $rest) $mp)
+   (insertAllExemplars $rest (OS.insert compareExemplar $ex $mp)))
+
+(= (rescoreMetapop $metaPop $newRatio)
+   (if (== $metaPop ())
+       ()
+       (let $rescoredList (rescoreMetapopToExprList $metaPop $newRatio)
+          (insertAllExemplars $rescoredList ()))))
+

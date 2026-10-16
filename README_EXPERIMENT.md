@@ -9,8 +9,10 @@ This README documents the architectural enhancements, bug fixes, and empirical i
 2. [Symmetric Polarity Representation (`--permPolarityMode`, `--logicalPermRatio`)](#2-symmetric-polarity-representation)
 3. [Boolean Reducer Soundness Fix](#3-boolean-reducer-soundness-fix)
 4. [Benchmark Suite & Complexity Penalty Analysis](#4-benchmark-suite--complexity-penalty-analysis)
-5. [CLI Flags & Hyperparameters](#5-cli-flags--hyperparameters)
-6. [Verification & Testing](#6-verification--testing)
+5. [Stall-Triggered Complexity Ratio Relaxation](#5-stall-triggered-complexity-ratio-relaxation)
+6. [Experimental Benchmark Suite](#6-experimental-benchmark-suite)
+7. [CLI Flags & Hyperparameters](#7-cli-flags--hyperparameters)
+8. [Verification & Experiment Execution](#8-verification--experiment-execution)
 
 ---
 
@@ -124,35 +126,88 @@ Across 360 paired runs ($N=20$ paired seeds, ratios $14, 20, 50, 100, 300, 1000$
 
 ---
 
-## 5. CLI Flags & Hyperparameters
+## 5. Stall-Triggered Complexity Ratio Relaxation
+
+### The Motivation: Adaptive Penalty Modulation
+Dense sweep results confirmed that while lower complexity ratios ($r=14$) enforce compact representations, they erect an artificial penalty barrier that culled promising intermediate candidates (e.g., rejecting $-2.0$ candidates with 15 literals on `parity4`). Conversely, statically relaxing the ratio everywhere ($r \ge 1000$) invites bloat and runtime timeouts.
+
+Rather than running statically relaxed, **Stall-Triggered Complexity Ratio Relaxation** maintains a parsimonious baseline penalty ($r_{\text{base}} = 14.0$) and dynamically relaxes the penalty ($r_{\text{relax}} = 100.0$) **only when the search hits an empirical fitness stall**.
+
+### The Mechanism: $(K, M_{\text{min}}, G, C)$ State Machine
+Managed by `scripts/stall_controller.py` and hooked into `deme/expand-deme.metta`:
+
+1. **State Machine States:**
+   - `BASE`: Operates at $r_{\text{base}} = 14.0$. Tracks generations without improvement in **best-ever raw score**.
+   - `RELAXED`: When stall counter reaches $K$, switches to $r_{\text{relax}} = 100.0$ for a minimum window of $M_{\text{min}}$ generations.
+   - `COOLDOWN`: After the relaxed window expires, restores $r_{\text{base}}$ for $C$ generations before relaxation can be triggered again.
+
+2. **Breakthrough Grace Period ($G$):**
+   If a raw breakthrough occurs during the `RELAXED` window, the controller grants a grace period of $G$ extra generations (`relaxed_gens_remaining = max(relaxed_gens_remaining, G)`), allowing the search to fully exploit the relaxed landscape before cooling down.
+
+3. **Metapopulation Rescoring & Ordered Set Invariant:**
+   Stored penalized scores become stale when the ratio switches. If not rescored, existing exemplars retain low-ratio penalized scores while new candidates receive high-ratio scores.
+   - At each ratio switch, `(rescoreMetapop $metaPop $nextRatio)` recalculates penalized fitness for every exemplar:
+     $$\text{penScore} = \text{raw} - \frac{\text{cpxy}}{r_{\text{next}}}$$
+   - The metapopulation is fully re-sorted via `(OS.insert compareExemplar ...)`.
+   - Hill-climbing's scoring context `$truthTableBScore` is rebuilt via `(createTruthTableBScore $nextRatio $itable)` so that neighborhood search instantly adopts the active ratio.
+
+4. **Strict Fairness Guarantee:**
+   Regardless of the active ratio at termination, all final returned candidates in `FinalResult` are rescored back to $r_{\text{base}}$ in `moses/demo-problems.metta`.
+
+---
+
+## 6. Experimental Benchmark Suite
+
+The intervention is evaluated using a 5-arm pre-registered benchmark across 20 paired seeds on `parity4`, `majority5`, and `parity5` (300 runs total):
+
+| Arm | Description | Parameters |
+|:---|:---|:---|
+| `static_14` | Baseline | $r = 14.0$, `stallRelaxationMode=False` |
+| `static_100` | Static Upper Bound | $r = 100.0$, `stallRelaxationMode=False` |
+| `stall_relax_K3` | Dynamic Stall ($K=3$) | $r_{\text{base}}=14, r_{\text{relax}}=100, K=3, M_{\text{min}}=3, G=2, C=3$ |
+| `stall_relax_K5` | Dynamic Stall ($K=5$) | $r_{\text{base}}=14, r_{\text{relax}}=100, K=5, M_{\text{min}}=3, G=2, C=3$ |
+| `trigger_only_ctrl` | Rescore Negative Control | $r_{\text{base}}=14, r_{\text{relax}}=14, K=3, M_{\text{min}}=3, G=2, C=3$ |
+
+**Pre-Registered Evaluation Metrics:**
+- **Primary Metric:** Best-ever raw score at termination (paired Wilcoxon signed-rank test against `static_14`).
+- **Breakout Rate:** McNemar's exact test for proportion of seeds reaching breakout criteria.
+- **Overfitting & Bloat Checks:** Mean literal count of final candidates.
+- **Computational Overhead:** Total evaluations (`OptimizedDeme`), wall-clock runtime, and fraction of generations relaxed.
+
+---
+
+## 7. CLI Flags & Hyperparameters
 
 | Flag | Default | Description |
 |:---|:---:|:---|
-| `--maxRevisits=<int>` | `1` | Maximum times any canonical exemplar tree can be expanded before being excluded from roulette selection. |
-| `--permPolarityMode=<str>` | `classic` | Permutation generator mode: `classic` (asymmetric) or `symmetric` (full 4-sign variants). |
+| `--stallRelaxationMode=<str>` | `False` | Controller mode: `False` (static), `dynamic`, or `trigger_only`. |
+| `--baseComplexityRatio=<float>` | `14.0` | Baseline parsimonious complexity ratio. |
+| `--relaxedComplexityRatio=<float>` | `100.0` | Relaxed complexity ratio triggered on stall. |
+| `--stallThresholdK=<int>` | `3` | Number of non-improving generations before relaxation triggers. |
+| `--relaxWindowMinM=<int>` | `3` | Minimum consecutive generations to hold relaxed ratio. |
+| `--relaxGraceG=<int>` | `2` | Additional generations granted when raw score improves during relaxation. |
+| `--relaxCooldownC=<int>` | `3` | Cooldown generations at $r_{\text{base}}$ before relaxation can re-trigger. |
+| `--maxRevisits=<int>` | `1` | Maximum times any canonical exemplar tree can be expanded. |
+| `--permPolarityMode=<str>` | `classic` | Permutation generator mode: `classic` or `symmetric`. |
 | `--logicalPermRatio=<float>` | `1.0` | Clause expansion sampling budget multiplier. |
-| `--complexityRatio=<float>` | `3.5` | Complexity penalty divisor. Use `100.0` for parity4 breakout. |
+| `--complexityRatio=<float>` | `3.5` | Standard complexity penalty divisor (when relaxation is disabled). |
 | `--problem=<str>` | — | Benchmark problem: `parity3`, `parity4`, `parity5`, `majority3`, `majority5`, `majority7`, `mux3`, `mux6`, `disjunction3`. |
 
 ---
 
-## 6. Verification & Testing
-
-### Running Unit Tests
+## 8. Verification & Experiment Execution
 
 ```sh
-# 1. Python canonicalization & visited tracking unit tests
-python3 scripts/test_visited_unit.py
+# 1. Run Stall Controller unit tests
+python3 scripts/test_stall_controller_unit.py
 
-# 2. Python telemetry & logger unit tests
-python3 scripts/test_logger_helper_unit.py
+# 2. Run end-to-end integration test (parity4, dynamic stall switching)
+python3 scripts/test_dynamic_stall_e2e.py
 
-# 3. MeTTa boolean reduct soundness fix test
-./PeTTa/run.sh reduct/boolean-reduct/tests/test_reduct_fix.metta -s
+# 3. Run full 5-arm benchmark sweep (resumable, saves to stall_relaxation_results.json)
+python3 scripts/run_stall_relaxation_experiment.py
 
-# 4. MeTTa symmetric representation test
-./PeTTa/run.sh representation/tests/sample-logical-perms-symmetric-test.metta -s
-
-# 5. Full test suite
-python3 scripts/run-tests.py
+# 4. Analyze results and compute paired statistical significance
+python3 scripts/analyze_stall_relaxation.py
 ```
+

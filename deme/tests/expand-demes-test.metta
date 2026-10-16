@@ -1,4 +1,5 @@
 !(import! &self ../../utilities/general-helpers)
+!(callPredicate (Predicate (py_add_lib_dir "scripts" first)))
 !(import! &self ../../parameters/registry)
 !(import! &self ../../parameters/defaults)
 !(import! &self ../../utilities/list-methods)

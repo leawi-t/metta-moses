@@ -118,6 +118,24 @@ $optimDeme
           ($_ (py-call (logger_helper.register_metapop_exemplar (preOrder $tree)))))
       (registerMetapopSurvivors $rest)))
 
+(= (handleStallSwitch $switched $metaPop $context)
+   (if (== $switched 1)
+       (let*
+         (
+           ($nextRatio (py-call (stall_controller.get_current_ratio)))
+           ($nextState (py-call (stall_controller.get_current_state)))
+           ($_setParam (set-param complexityRatio $nextRatio))
+           ($_print (println! (RatioSwitchedTo: $nextRatio State: $nextState)))
+           ($rescoredMetaPop (rescoreMetapop $metaPop $nextRatio))
+           ($nextContext (case $context
+                           ((($prune-exemplar $fs-algo $truthTableBScore $itable)
+                             ($prune-exemplar $fs-algo (createTruthTableBScore $nextRatio $itable) $itable))
+                            (($nGames $opponentPolicy $complexityRatio)
+                             ($nGames $opponentPolicy $nextRatio)))))
+         )
+         ($rescoredMetaPop $nextContext))
+       ($metaPop $context)))
+
 ;; The number of expansions in the open cog classic is equivalent to the number of deme expansions. That looks like the same thing we are doing here but not sure.
 (= (runMoses $maxGen $maxScore $metaPop $nExpansion $nDeme $context $optimize)
 (if (== $maxGen 0)
@@ -144,6 +162,11 @@ $optimDeme
        ($_ (py-call (logger_helper.finalize_generation_stats $maxGen $bestRawInMetapop $bestRawComplexity $topPen)))
        ;; ($_ (println! (topscore: $topScore)))
        ;; ($_ (println! (Top: $topScore Max: $maxScore (cScore>= $topScore $maxScore))))
+       ($stallMode (param stallRelaxationMode))
+       ($switched (if (or (== $stallMode False) (== $stallMode ()))
+                      0
+                      (py-call (stall_controller.step_controller $maxGen $bestRawInMetapop))))
+       (($nextMetaPop $nextContext) (handleStallSwitch $switched $updatedMetaPop $context))
        ($nothing (clearSpace &treeSpace))
        ($_ (cut)) ;; INFO: This cut speeds things up. Don't remove it.
        ($_ (println! ""))
@@ -152,10 +175,10 @@ $optimDeme
  ;; scalar `$maxScore`. The Cscore's complexity / penalty fields are
  ;; consulted elsewhere when ranking candidates but not at termination.
  (if (>= (getScore $topScore) $maxScore)
-         (if (<= (param maxCandOutput) (OS.length $updatedMetaPop))
-             (OS.getTopN (param maxCandOutput) $updatedMetaPop)
-             $updatedMetaPop)
-         (runMoses (- $maxGen 1) $maxScore $updatedMetaPop $nExpansion $nDeme $context $optimize)))))
+         (if (<= (param maxCandOutput) (OS.length $nextMetaPop))
+             (OS.getTopN (param maxCandOutput) $nextMetaPop)
+             $nextMetaPop)
+         (runMoses (- $maxGen 1) $maxScore $nextMetaPop $nExpansion $nDeme $nextContext $optimize)))))
 
 
 ;; Some helpers specific to final testing

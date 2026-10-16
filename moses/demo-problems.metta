@@ -69,7 +69,7 @@
                  (False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True False False False False True True True True)
                  (False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True False False True True)
                  (False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True False True)
-                 (False False False False False False False False False False False False False False False True False False False False False False False True False False False True False True True True False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True False False False True False True True True False True True True True True True True False True True True True True True True True True True True True True True True)))
+                 (False False False False False False False False False False False False False False False True False False False False False False False True False False False True False True True True False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True False False False False False False False True False False False True False True True True False False False True False True True True False True True True True True True True False False False True False True True True False True True True True True True True False True True True True True True True True True True True True True True True))
                 (X1 X2 X3 X4 X5 X6 X7 Out)))
 
 ;; 3-Bit Multiplexer: - Input 1 is Address (Addr)
@@ -183,6 +183,18 @@
 
         ($srp (py-call (random.seed $seed)))
         ($_reset (py-call (logger_helper.reset)))
+        ($stallMode (param stallRelaxationMode))
+        ($_stallInit (if (or (== $stallMode False) (== $stallMode ()))
+                         ()
+                         (let* (($bRatio (param baseComplexityRatio))
+                                ($rRatio (param relaxedComplexityRatio))
+                                ($kVal   (param stallThresholdK))
+                                ($mVal   (param relaxWindowMinM))
+                                ($gVal   (param relaxGraceG))
+                                ($cVal   (param relaxCooldownC))
+                                ($_setBase (set-param complexityRatio $bRatio))
+                               )
+                            (py-call (stall_controller.configure_controller $bRatio $rRatio $kVal $mVal $gVal $cVal $stallMode)))))
         ;; genCount feeds the cap-size formula inside resizeMetapop; it
         ;; is conceptually the initial $maxGen and stays constant across
         ;; the recursion, so we seed it once here.
@@ -201,11 +213,16 @@
               (False $fsAlgo $truthTableBScore $itable)
               $optimizer))
         ;; ($_ (println! (Result: $result)))
-        ($newR (mapG cleanedExemplar $result))
+        ($baseRatioFinal (if (or (== (param stallRelaxationMode) False) (== (param stallRelaxationMode) ()))
+                             (param complexityRatio)
+                             (param baseComplexityRatio)))
+        ($rescoredResult (rescoreMetapop $result $baseRatioFinal))
+        ($newR (mapG cleanedExemplar $rescoredResult))
         ($_sum (py-call (logger_helper.log_summary)))
         ($_ (cut)) ;; INFO: This gives few extra seconds performance gain. Do not remove.
       )
       (FinalResult $newR)))
+
 
 ;; Maps the optAlgo symbol to the concrete optimizer function used by
 ;; runMoses. Only hill climbing is integration-tested today; the SA and

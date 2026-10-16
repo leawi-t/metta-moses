@@ -103,6 +103,13 @@
 
 ;; ---- Scoring ----
 !(add-atom &params (complexityRatio 3.5))
+!(add-atom &params (baseComplexityRatio 14.0))
+!(add-atom &params (relaxedComplexityRatio 100.0))
+!(add-atom &params (stallRelaxationMode False))
+!(add-atom &params (stallThresholdK 3))
+!(add-atom &params (relaxWindowMinM 3))
+!(add-atom &params (relaxGraceG 2))
+!(add-atom &params (relaxCooldownC 3))
 
 ;; ---- Exemplar selection ----
 !(add-atom &params (compxyTemp 6))
@@ -110,3 +117,4 @@
 
 ;; ---- Caching ----
 !(add-atom &params (defaultCacheSize 60))
+

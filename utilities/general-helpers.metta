@@ -1,4 +1,5 @@
 ;; Helper functions that are going to be useful for writing any metta code
+!(callPredicate (Predicate (py_add_lib_dir "scripts" first)))
 !(bind! perf_counter (new-state (py-call "time.perf_counter")))
 !(py-call (random.seed 0))
 

@@ -1,5 +1,6 @@
 import sys
 import visited_tracker
+import stall_controller
 
 _best_raw_ever = -1e9
 _expansion_count = 0
@@ -13,6 +14,9 @@ _current_gen_candidates = []
 _current_gen_metapop_trees = []
 _distinct_culled_better_raw_keys = set()
 _culled_better_raw_archive = {}
+
+def get_best_raw_ever():
+    return _best_raw_ever
 
 def reset():
     global _best_raw_ever, _expansion_count, _raw_levels, _total_culled, _total_better_raw_worse_pen, _per_gen_progression
@@ -28,7 +32,9 @@ def reset():
     _distinct_culled_better_raw_keys = set()
     _culled_better_raw_archive = {}
     visited_tracker.reset()
+    stall_controller.reset_controller()
     return True
+
 
 def register_deme_candidate(tree_str, raw, pen, cpxy):
     global _current_gen_candidates
@@ -93,8 +99,10 @@ def finalize_generation_stats(gen, best_raw, literals, best_pen):
         "distinct_culled_total": len(_distinct_culled_better_raw_keys)
     })
 
-    # 4. Print Step2-GenStats (with all 3 requested columns + culling metrics) and Step2-BestRaw
-    print(f"(Step2-GenStats Gen: {g} Exp: {_expansion_count} BestRaw: {cur_raw} Literals: {lits} BestPen: {b_pen} CulledThisGen: {culled_this_gen} DistinctCulledTotal: {len(_distinct_culled_better_raw_keys)})", flush=True)
+    # 4. Print Step2-GenStats (with all requested columns + culling metrics + effective ratio + state) and Step2-BestRaw
+    eff_ratio = stall_controller.get_current_ratio()
+    stall_state = stall_controller._controller.state
+    print(f"(Step2-GenStats Gen: {g} Exp: {_expansion_count} BestRaw: {cur_raw} Literals: {lits} BestPen: {b_pen} CulledThisGen: {culled_this_gen} DistinctCulledTotal: {len(_distinct_culled_better_raw_keys)} EffectiveRatio: {eff_ratio} StallState: {stall_state})", flush=True)
     print(f"(Step2-BestRaw Gen: {g} Exp: {_expansion_count} Ever: {_best_raw_ever} CurrentMetapop: {cur_raw})", flush=True)
 
     # 5. Clear per-generation buffers
@@ -146,6 +154,8 @@ def log_deme_culling(deme_id, better_raw_worse_pen_cnt, culled_cnt):
 
 def log_summary():
     st = visited_tracker.stats()
+    summ = stall_controller._controller.get_summary()
     levels_str = " ".join(f"{k}:{v}" for k, v in sorted(_raw_levels.items()))
-    print(f"(Step2-Summary UniqueVisited: {st['unique_keys']} TotalExpansions: {st['total_visits']} FallbackCount: {st['fallback_count']} BestRaw: {_best_raw_ever} BetterRawWorsePen: {_total_better_raw_worse_pen} DistinctCulledBetterRaw: {len(_distinct_culled_better_raw_keys)} Culled: {_total_culled} Levels: [{levels_str}])", flush=True)
+    print(f"(Step2-Summary UniqueVisited: {st['unique_keys']} TotalExpansions: {st['total_visits']} FallbackCount: {st['fallback_count']} BestRaw: {_best_raw_ever} BetterRawWorsePen: {_total_better_raw_worse_pen} DistinctCulledBetterRaw: {len(_distinct_culled_better_raw_keys)} Culled: {_total_culled} RelaxedGens: {summ['total_relaxed_gens']} FractionRelaxed: {summ['fraction_relaxed']:.2f} SwitchCount: {summ['switch_count']} Levels: [{levels_str}])", flush=True)
     return True
+

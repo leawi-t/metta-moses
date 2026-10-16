@@ -236,9 +236,14 @@ def run_experiment():
             else:
                 print(f"[{completed:3d}/{total_tasks}] {res['problem']:<10} {res['arm']:<18} s={res['seed']:<2} -> STATUS: {res['status']}", flush=True)
                 
-            if completed % 5 == 0 or completed == total_tasks:
-                with open(output_file, "w") as f:
+            # Save progress after every run atomically so that no progress is lost on sleep/shutdown
+            try:
+                tmp_file = output_file + ".tmp"
+                with open(tmp_file, "w") as f:
                     json.dump(all_results, f, indent=2)
+                os.replace(tmp_file, output_file)
+            except Exception as e:
+                print(f"Error saving progress: {e}", flush=True)
 
 if __name__ == "__main__":
     run_experiment()

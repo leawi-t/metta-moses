@@ -65,39 +65,105 @@
                 (cons-atom ($x $y $z) (tripletWith $x $rest $tail))
                 (tripletWith $x $rest $tail)))))
 
-;; getArgs -> generate logical expressions for the picked permutation indices
-;; Parameters:
-;;          $swapedOp -> swaped operator
-;;          $n -> number of argument labels (index space {0 .. $n-1})
-;;          $picked -> list of picked idxs
-;; (: getArgs (-> Atom Number Expression Expression Expression))
-(= (getArgs $swapedOp $n $picked $argLabels)
+;; genUnorderedPairs -> all distinct unordered pairs (a, b) from argLabels with a before b
+(= (genUnorderedPairs ()) ())
+(= (genUnorderedPairs $xs)
+   (if (== $xs ())
+       ()
+       (let* (($x (car-atom $xs))
+              ($rest (cdr-atom $xs))
+              ($pairsWithX (map-atom $rest $y ($x $y))))
+           (concatT $pairsWithX (genUnorderedPairs $rest)))))
+
+;; emitFourSignVariants -> for an unordered pair (a, b), emit all four sign patterns
+(= (emitFourSignVariants $op $a $b)
+   ((quote ($op $a $b))
+    (quote ($op $a (NOT $b)))
+    (quote ($op (NOT $a) $b))
+    (quote ($op (NOT $a) (NOT $b)))))
+
+(= (emitAllPairVariants $op ()) ())
+(= (emitAllPairVariants $op $pairs)
+   (if (== $pairs ())
+       ()
+       (let* (($pair (car-atom $pairs))
+              ($rest (cdr-atom $pairs))
+              (($a $b) $pair)
+              ($four (emitFourSignVariants $op $a $b)))
+           (concatT $four (emitAllPairVariants $op $rest)))))
+
+;; sampleFromList -> uniformly sample k elements without replacement from list
+(= (sampleFromList $list $k)
+   (let $total (length $list)
+      (if (>= $k $total)
+          $list
+          (if (<= $k 0)
+              ()
+              (let* (($upper (- $total 1))
+                     ($indices (lazyRandomSelector 0 $upper $k)))
+                 (map-atom $indices $idx (index-atom $list $idx)))))))
+
+;; getArgsClassic -> original asymmetric pair generator
+(= (getArgsClassic $swapedOp $n $picked $argLabels)
     (map-atom $picked $i
         (let* ((($a $b) (pairAt $n $i))
                ($1 (index-atom $argLabels $a))
                ($2 (index-atom $argLabels $b)))
-            ;; quote: these perms are data; var-headed ($swapedOp ...) would
-            ;; meta-call and the literal (NOT $1) would fire boolean-ops' NOT
             (if (< $b $a)
                 (quote ($swapedOp $2 $1))
                 (quote ($swapedOp (NOT $1) $2))))))
 
+;; getArgs -> defaults to getArgsClassic for backward compatibility
+(= (getArgs $swapedOp $n $picked $argLabels)
+   (getArgsClassic $swapedOp $n $picked $argLabels))
+
+(= (getLogicalPermRatio)
+   (let $r (param logicalPermRatio)
+        (if (or (== $r ()) (== (get-metatype $r) Expression))
+            1.0
+            $r)))
+
+(= (getPermPolarityMode)
+   (let $m (param permPolarityMode)
+        (if (or (== $m ()) (== (get-metatype $m) Expression))
+            classic
+            $m)))
+
 ;; sampleLogicalPerms -> generate logical permutations for boolean expressions
-;; Parameters:
-;;          $op -> the operator passed from the iterator
-;;          $arity -> the number of arguments in the logical expression
-;; Returns:
-;;          Union of $perms (the list of logical expressions generated) with args
-;; (: sampleLogicalPerms (-> Atom Number Expression Expression))
 (= (sampleLogicalPerms $op $arity $argLabels)
-    (let* (($swapedOp (swapAndOr $op))
-           ($nPairs $arity)) ;; since perm_ratio is 0.0 the max number of n_pairs = arity
+   (let* (($swapedOp (swapAndOr $op))
+          ($mode (getPermPolarityMode)))
+      (if (== $mode symmetric)
+          (sampleLogicalPermsSymmetric $swapedOp $arity $argLabels)
+          (sampleLogicalPermsClassic $swapedOp $arity $argLabels))))
+
+(= (sampleLogicalPermsClassic $swapedOp $arity $argLabels)
+    (let* (($ratio (getLogicalPermRatio))
+           ($rawN (floor-math (* $arity $ratio)))
+           ($maxPoss (* $arity (- $arity 1)))
+           ($nPairs (if (> $rawN $maxPoss) $maxPoss $rawN)))
         (if (<= $nPairs 1)
-            (let $arg (car-atom $argLabels) (quote ($arg (NOT $arg))))  ;; assuming at worst case, only one argument is returned -- representation building process makes sure that those with empty feature set do not make it to actual knob building stage; quote keeps (NOT ...) as data now that scoring/boolean-ops registers a NOT clause
-            (let* (($upperbound (- (* $arity (- $arity 1)) 1))
+            (let $arg (car-atom $argLabels) (quote ($arg (NOT $arg))))
+            (let* (($upperbound (- $maxPoss 1))
                    ($picked (lazyRandomSelector 0 $upperbound $nPairs))
-                   ($perms (getArgs $swapedOp $arity $picked $argLabels)))
+                   ($perms (getArgsClassic $swapedOp $arity $picked $argLabels)))
                (concatT $argLabels $perms)))))
+
+(= (sampleLogicalPermsSymmetric $swapedOp $arity $argLabels)
+    (let* (($ratio (getLogicalPermRatio))
+           ($pairs (genUnorderedPairs $argLabels))
+           ($rawClauses (emitAllPairVariants $swapedOp $pairs))
+           ($allClauses (unique-atom $rawClauses))
+           ($totalClauses (length $allClauses))
+           ($rawN (floor-math (* $arity $ratio)))
+           ($nPairs (if (> $rawN $totalClauses) $totalClauses $rawN)))
+        (if (<= $nPairs 1)
+            (let $arg (car-atom $argLabels) (quote ($arg (NOT $arg))))
+            (let $perms (sampleFromList $allClauses $nPairs)
+               (concatT $argLabels $perms)))))
+
+
+
 
 ;; getMoveArgs -> generate move expressions for the picked triplet indices
 ;; Params:

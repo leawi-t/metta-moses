@@ -19,9 +19,16 @@ ok_cnt = sum(1 for r in data if r.get("status") == "ok")
 timeout_cnt = sum(1 for r in data if r.get("status") == "timeout")
 err_cnt = sum(1 for r in data if r.get("status") not in ("ok", "timeout"))
 
-by_prob_arm = defaultdict(lambda: defaultdict(int))
+by_prob_arm_ok = defaultdict(lambda: defaultdict(int))
+by_prob_arm_err = defaultdict(lambda: defaultdict(int))
+error_msgs = defaultdict(int)
+
 for r in data:
-    by_prob_arm[r["problem"]][r["arm"]] += 1
+    if r.get("status") == "ok":
+        by_prob_arm_ok[r["problem"]][r["arm"]] += 1
+    else:
+        by_prob_arm_err[r["problem"]][r["arm"]] += 1
+        error_msgs[r.get("status")] += 1
 
 print("=" * 65)
 print(f"STALL RELAXATION BENCHMARK STATUS: {total}/300 runs ({total/3.0:.1f}%)")
@@ -37,12 +44,19 @@ for p in problems:
     row = f"{p:<12} "
     p_tot = 0
     for a in arms:
-        c = by_prob_arm[p][a]
-        p_tot += c
-        row += f"{c:>2}/20{'':<6} "
+        c_ok = by_prob_arm_ok[p][a]
+        c_err = by_prob_arm_err[p][a]
+        p_tot += (c_ok + c_err)
+        row += f"{c_ok}k/{c_err}e{'':<4} "
     row += f"{p_tot:>3}/100"
     print(row)
 print("=" * 65)
+
+if error_msgs:
+    print("Error breakdown:")
+    for msg, cnt in error_msgs.items():
+        print(f"  [{cnt}x] {msg}")
+    print("=" * 65)
 
 if data:
     last = data[-1]

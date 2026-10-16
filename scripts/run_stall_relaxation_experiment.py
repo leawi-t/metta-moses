@@ -61,6 +61,15 @@ ARMS = {
 PROBLEMS = ["parity4", "majority5", "parity5"]
 SEEDS = list(range(1, 21)) # 20 paired seeds
 
+def parse_field(pattern, text, default=None, cast=int):
+    m = re.search(pattern, text)
+    if m:
+        try:
+            return cast(m.group(1))
+        except Exception:
+            pass
+    return default
+
 def run_single(problem, arm_name, seed, max_gen):
     arm_cfg = ARMS[arm_name]
     cmd = [
@@ -89,10 +98,7 @@ def run_single(problem, arm_name, seed, max_gen):
         out = proc.stdout
         
         # Summary metrics
-        m_sum = re.search(
-            r"\(Step2-Summary UniqueVisited:\s*(\d+)\s*TotalExpansions:\s*(\d+)\s*FallbackCount:\s*(\d+)\s*BestRaw:\s*([-+]?\d*\.?\d+)\s*BetterRawWorsePen:\s*(\d+)\s*(?:DistinctCulledBetterRaw:\s*(\d+)\s*)?Culled:\s*(\d+)(?:\s*RelaxedGens:\s*(\d+)\s*FractionRelaxed:\s*([-+]?\d*\.?\d+)\s*SwitchCount:\s*(\d+))?\s*Levels:\s*\[(.*?)\]\)",
-            out
-        )
+        m_sum = re.search(r"\(Step2-Summary (.*?)\)", out)
         
         best_raw = -1e9
         best_pen = -1e9
@@ -104,15 +110,13 @@ def run_single(problem, arm_name, seed, max_gen):
         switch_count = 0
         
         if m_sum:
-            unique_visited = int(m_sum.group(1))
-            expansions = int(m_sum.group(2))
-            best_raw = float(m_sum.group(4))
-            if m_sum.group(7):
-                relaxed_gens = int(m_sum.group(7))
-            if m_sum.group(8):
-                fraction_relaxed = float(m_sum.group(8))
-            if m_sum.group(9):
-                switch_count = int(m_sum.group(9))
+            s_text = m_sum.group(1)
+            unique_visited = parse_field(r"UniqueVisited:\s*(\d+)", s_text, 0, int)
+            expansions = parse_field(r"TotalExpansions:\s*(\d+)", s_text, 0, int)
+            best_raw = parse_field(r"BestRaw:\s*([-+]?\d*\.?\d+)", s_text, -1e9, float)
+            relaxed_gens = parse_field(r"RelaxedGens:\s*(\d+)", s_text, 0, int)
+            fraction_relaxed = parse_field(r"FractionRelaxed:\s*([-+]?\d*\.?\d+)", s_text, 0.0, float)
+            switch_count = parse_field(r"SwitchCount:\s*(\d+)", s_text, 0, int)
         else:
             m_raw = re.findall(r"\(Step2-BestRaw Gen: \d+ Exp: \d+ Ever: ([-+]?\d*\.?\d+)", out)
             if m_raw:

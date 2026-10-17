@@ -179,5 +179,5 @@ def run_campaign(jobs, run_fn, out_path, existing, workers=2):
             print(f"[{res.get('status', '?').upper()}] {res['problem']} {res['arm']} s={res['seed']} "
                   f"x{res.get('budget_multiplier', 1)} raw={res.get('best_raw')} "
                   f"term={res.get('termination')} evals={res.get('total_evals', 0)} "
-                  f"({res.get('wall_time', 0):.1f}s)")
+                  f"({res.get('wall_time', 0):.1f}s)", flush=True)
     return results

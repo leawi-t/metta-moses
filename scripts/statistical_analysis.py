@@ -237,13 +237,16 @@ def mode_stall(path):
 
 def mode_step1(path):
     recs = load(path)
-    tbl1, bad1 = table(recs, "parity4", budget=1)
-    tbl3, bad3 = table(recs, "parity4", budget=3)
-    print("\n== Step 1: parity4 budget check ==")
-    for arm in ("static_100", "stall_relax_K5"):
+    probs = {r.get("problem") for r in recs if r.get("problem")}
+    prob = probs.pop() if len(probs) == 1 else "parity4"
+    tbl1, bad1 = table(recs, prob, budget=1)
+    tbl3, bad3 = table(recs, prob, budget=3)
+    arms = sorted(set(tbl1) | set(tbl3))
+    print(f"\n== Budget check on {prob} ==")
+    for arm in arms:
         for lab, t, b in (("1x", tbl1, bad1), ("3x", tbl3, bad3)):
             if arm in t:
-                print(f"  {lab} " + summary_row(t, arm, "parity4"))
+                print(f"  {lab} " + summary_row(t, arm, prob))
                 term = defaultdict(int)
                 for r in t[arm].values():
                     term[r.get("termination", "unknown")] += 1
@@ -251,7 +254,7 @@ def mode_step1(path):
                 print(f"      termination: {dict(term)}; non-ok/censored rows: {nb}")
         if arm in tbl1 and arm in tbl3:
             s = sorted(set(tbl1[arm]) & set(tbl3[arm]))
-            t = paired(vec(tbl3, arm, s, "best_raw", "parity4"), vec(tbl1, arm, s, "best_raw", "parity4"))
+            t = paired(vec(tbl3, arm, s, "best_raw", prob), vec(tbl1, arm, s, "best_raw", prob))
             print(f"      3x vs 1x paired raw (n={len(s)}): {fmt(t)}")
     solved3 = sum(r.get("solved", False) for a in tbl3 for r in tbl3[a].values())
     n3 = sum(len(tbl3[a]) for a in tbl3)

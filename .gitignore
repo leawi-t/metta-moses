@@ -21,4 +21,6 @@ notes/
 !moses/configs/*.json
 *.patched
 *.unpatched
+*.log
 repomix-output.xml
+

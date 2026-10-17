@@ -295,31 +295,58 @@ The pre-registered fresh replication tested whether the nominal K5 improvement o
    - **Holm-corrected $p = 0.0074^{**}$** ($\alpha = 0.01$).
    - **Finding:** The direct paired test between K5 and its matched schedule control proves that the performance gain is **strictly causal to ratio relaxation**, rather than an artifact of rescoring, sorting, or reordering candidates upon stall triggers.
 
-### Trajectory Analysis at Equal Cumulative Evaluations:
-Evaluating raw fitness trajectories across generation milestones enables rigorous comparison at equal compute:
+### Trajectory Analysis at Equal Cumulative Evaluations (Exploratory):
 
-| Cumulative Evals | `static_14` (Base) | `stall_relax_K5` | `static_100` | K5 vs `static_14` Paired Contrast | K5 vs `static_100` Paired Contrast |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| **$1,000$ evals** | $-15.70$ | $-15.70$ | $-15.32$ | $0\text{W}/0\text{L}/40\text{T}$, Diff $+0.00$, $p=1.0000$ | $4\text{W}/16\text{L}/20\text{T}$, Diff $-0.38$ $[-0.68, -0.07]$, $p=0.0103^*$ |
-| **$2,000$ evals** | $-14.57$ | **$-14.25$** | $-13.65$ | $11\text{W}/3\text{L}/26\text{T}$, Diff $+0.33$ $[+0.07, +0.60]$, $p=0.0262^*$ | $6\text{W}/20\text{L}/14\text{T}$, Diff $-0.60$ $[-0.95, -0.28]$, $p=0.0029^{**}$ |
-| **$2,500$ evals** | $-14.07$ | **$-13.70$** | $-13.07$ | $10\text{W}/2\text{L}/28\text{T}$, Diff $+0.38$ $[+0.12, +0.68]$, $p=0.0179^*$ | $10\text{W}/20\text{L}/10\text{T}$, Diff $-0.62$ $[-1.07, -0.20]$, $p=0.0198^*$ |
-| **$3,000$ evals** | $-13.90$ | **$-13.30$** | $-12.78$ | $13\text{W}/2\text{L}/25\text{T}$, Diff $+0.60$ $[+0.25, +0.97]$, $p=0.0034^{**}$ | $11\text{W}/19\text{L}/10\text{T}$, Diff $-0.53$ $[-1.02, -0.03]$, $p=0.0756$ |
+To compare arms at equal compute rather than equal generations, we evaluated raw fitness at standardized evaluation checkpoints. 
 
-- **Early Phase ($\le 1,000$ evals):** K5 and `static_14` are identical ($40/40$ ties), confirming that search begins identically before stall detection kicks in.
-- **Mid/Late Divergence ($2,000$–$3,000$ evals):** As search encounters plateaus, K5 triggers relaxation and significantly pulls ahead of `static_14` at every evaluation budget ($p < 0.03$).
-- **Convergence toward `static_100`:** At $3,000$ evaluations, the fitness gap between K5 and `static_100` narrows and is no longer statistically significant ($p = 0.0756$), while K5 achieves this in $37\text{s}$ median runtime ($36\%$ faster than `static_100` at $58\text{s}$).
+**Stated Checkpoint Policy & Active Run Census:**
+Because runs had different termination evaluation counts (medians: $2,427$ for `static_14`, $2,832$ for K5, $3,482$ for `static_100`), many runs stopped before late checkpoints. Carried-forward comparisons carry the terminal raw score forward once a run finishes, while active-only comparisons restrict analysis to runs that reached or exceeded that checkpoint. Primary equal-eval conclusions are drawn from checkpoints $\le 2,000$ evaluations where $\ge 90\%$ of all runs remained active.
+
+| Checkpoint | Active Runs (`s14`/`K5`/`s100`) | `static_14` (Base) | `stall_relax_K5` | `static_100` | K5 vs `static_14` (Carried [Active]) | K5 vs `static_100` (Carried [Active]) |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **$1,000$ evals** | $39/39/40$ | $-15.70$ | $-15.70$ | **$-15.32$** | $0\text{W}/0\text{L}/40\text{T}$, Diff $+0.00$, $p=1.0000$ | $4\text{W}/16\text{L}/20\text{T}$, Diff $-0.38$ $[-0.68, -0.07]$, $p=0.0103^*$ |
+| **$1,500$ evals** | $38/39/40$ | $-15.18$ | **$-15.05$** | **$-14.35$** | $5\text{W}/1L/34\text{T}$, Diff $+0.12$, $p=0.1004$ [$p=0.1797$] | $6\text{W}/22\text{L}/12\text{T}$, Diff $-0.70$ $[-1.05, -0.35]$, $p=0.0011^{**}$ |
+| **$2,000$ evals** | $36/39/40$ | $-14.57$ | **$-14.25$** | **$-13.65$** | $11\text{W}/3\text{L}/26\text{T}$, Diff $+0.33$ $[+0.07, +0.60]$, $p=0.0262^*$ | $6\text{W}/20\text{L}/14\text{T}$, Diff $-0.60$ $[-0.95, -0.28]$, $p=0.0029^{**}$ |
+| *$2,500$ evals* | $19/29/37$ | $-14.07$ | $-13.70$ | **$-13.07$** | $10\text{W}/2\text{L}/28\text{T}$, Diff $+0.38$, $p=0.0179^*$ [$n=19$: $p=1.0$] | $10\text{W}/20\text{L}/10\text{T}$, Diff $-0.62$ $[-1.07, -0.17]$, $p=0.0198^*$ |
+
+### Key Nuances & Corrections on K5 vs `static_100`:
+1. **`static_100` Outperforms K5 at Equal Compute on Parity5:**
+   - K5 trails `static_100` at every evaluation checkpoint ($p \le 0.02$).
+   - At $3,000$ evaluations, more than half of `static_14` ($26/40$) and K5 ($25/40$) runs had already terminated; the difference remains **unresolved** (Wilcoxon $p = 0.076$, but bootstrap CI $[-1.02, -0.03]$ excludes zero). "Convergence toward static_100" is **not** supported by the data.
+2. **K5 Recovers Only Part of the Parsimony Penalty:**
+   - K5's average gain over baseline (+0.60) captures roughly **$40\%$** of `static_100`'s total gain (+1.48).
+   - Notably, `static_100`'s lead appears before any stall: at $1,000$ evaluations, K5 and `static_14` are identical (40/40 ties), whereas `static_100` is already significantly ahead ($-15.32$ vs $-15.70$, $p=0.0103$). This indicates that ratio 14 is overly punitive on Parity5 from the very beginning, rather than solely at late-stage deadlocks.
+3. **Execution Time vs Efficiency:**
+   - K5 finishes in less wall time than `static_100` solely because it executes fewer evaluations per generation, not because it converges faster. At equal evaluations, `static_100` reaches higher fitness.
+4. **Generalization Scope:**
+   - K5's benefit is strictly confirmed on **`parity5`**. On `parity4` at $1\times$, K5 was null ($p = 0.93$), and on `majority5` it showed no effect ($p = 0.94$). Claims are strictly scoped to `parity5` until long-horizon runs show otherwise.
 
 ---
 
-## 9. Next Steps: Step 3 Factorial Protocol
+## 9. Decisive Next Experiments
 
-**Step 3: Symmetric Candidate Generator × Complexity Ratio Factorial on Parity4**
-- Test whether parsimonious complexity ratio ($14.0$) masked the potential benefits of the symmetric candidate generator (`full_negation`).
-- **Design Options:**
-  - $2 \times 2$ Factorial: `{original, full_negation}` $\times$ `{static_100, stall_relax_K5}` across paired seeds (computationally efficient, avoiding the slow/stagnant `static_14` arm).
-  - $2 \times 3$ Factorial: `{original, full_negation}` $\times$ `{static_14, static_100, stall_relax_K5}` across paired seeds.
-- **Horizon:** Set with adequate evaluation budget (e.g. 30–45 generations) to avoid truncation masking generator effects.
-- *Runner:* `scripts/run_factorial_2x3.py`
+On current evidence, static high ratio (`static_100`) provides superior raw search progress compared to dynamic K5 on parity landscapes. K5 is justified only if static high ratios incur hidden costs—specifically code bloat or overfitting. 
+
+1. **Decisive Noisy-Data Benchmark (Generalization vs Overfitting):**
+   - Inject $5\%–10\%$ label noise into training truth tables; evaluate learned trees against a clean held-out test table.
+   - Arms: `static_14`, `static_100`, `stall_relax_K5`, and optionally `static_1000`.
+   - Domains: `majority5` (fast, solvable baseline) and `parity5` / `parity4`.
+   - **Hypotheses & Outcomes:**
+     - *Outcome A (K5 Wins):* If `static_100` overfits to training noise (bloats literals with degraded test accuracy) while K5 preserves test accuracy, K5 earns its place as an overfitting-resistant search intervention.
+     - *Outcome B (`static_100` Wins):* If `static_100` does not overfit and maintains superior test accuracy, the finding simplifies: default ratio 14 is excessively punitive on deceptive boolean landscapes, and $r \approx 100$ resolves it at modest cost.
+     - *Outcome C (Both Overfit):* If both overfit equally, the result demonstrates fundamental limits of the complexity penalty formulation.
+
+2. **Search-Then-Rerank Arm:**
+   - Run search unconstrained at `static_100`, then re-rank or simplify final candidate trees using base ratio $14.0$. This tests whether parsimonious output can be achieved without penalizing exploratory search.
+
+3. **Majority7 Long-Horizon Budget Check:**
+   - Run `majority7` at $3\times$–$5\times$ budget to determine whether its stagnated score ($-19$) is an impassable plateau or a truncation artifact.
+
+4. **Symmetric Candidate Generator Factorial (2×2 Design):**
+   - Re-evaluate the candidate generator as a focused $2 \times 2$ factorial: `{original, full_negation} \times {static_100, stall_relax_K5}` at longer budget (e.g. 30–45 generations) to avoid truncation masking generator effects.
+
+5. **Park Mid-Run Injection:**
+   - Representation injection will be paused until genuine stalls are confirmed to persist across $3\times$–$5\times$ budgets.
 
 ---
 

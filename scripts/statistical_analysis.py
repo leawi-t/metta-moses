@@ -143,11 +143,13 @@ def vec(tbl, arm, seeds, metric, problem):
     return np.array(out)
 
 
-def raw_at_evals(run_record, target_evals):
+def raw_at_evals(run_record, target_evals, carry_forward=True):
     traj_evals = run_record.get("evals_trajectory", [])
     traj_raw = run_record.get("raw_trajectory", [])
     if not traj_evals or not traj_raw:
         return run_record.get("best_raw")
+    if not carry_forward and traj_evals[-1] < target_evals:
+        return np.nan
     val = traj_raw[0]
     for ev, r in zip(traj_evals, traj_raw):
         if ev <= target_evals:
@@ -297,23 +299,30 @@ def mode_step2(path):
 
     has_trajectories = any(r.get("evals_trajectory") for a in tbl for r in tbl[a].values())
     if has_trajectories:
-        print("\n  Trajectory comparison at equal evaluations:")
-        eval_milestones = [1000, 2000, 2500, 3000]
+        print("\n  Trajectory comparison at equal evaluations (Exploratory):")
+        print("    Policy: Stated comparison at checkpoints reached by majority of runs (>=90% active at <=2000 evals).")
+        eval_milestones = [1000, 1500, 2000, 2500]
         for e_target in eval_milestones:
             print(f"\n    At {e_target} cumulative evaluations:")
+            counts = {arm: sum(r.get("total_evals", 0) >= e_target for r in tbl[arm].values()) for arm in tbl}
+            print("      Active runs reaching checkpoint: " + ", ".join(f"{arm}={counts[arm]}/{len(tbl[arm])}" for arm in tbl))
             for arm in tbl:
-                vals = [raw_at_evals(r, e_target) for r in tbl[arm].values() if raw_at_evals(r, e_target) is not None]
-                if vals:
-                    print(f"      {arm:<20} mean {np.mean(vals):+6.2f}  med {np.median(vals):+5.1f}")
+                vals = [raw_at_evals(r, e_target, carry_forward=True) for r in tbl[arm].values()]
+                print(f"      {arm:<20} mean {np.mean(vals):+6.2f}  med {np.median(vals):+5.1f}")
             for a, b in (("stall_relax_K5", "static_14"), ("stall_relax_K5", "static_100")):
                 if a in tbl and b in tbl:
                     s = seeds_for(tbl, [a, b], p)
-                    va = np.array([raw_at_evals(tbl[a][seed], e_target) for seed in s])
-                    vb = np.array([raw_at_evals(tbl[b][seed], e_target) for seed in s])
-                    valid = ~(np.isnan(va) | np.isnan(vb))
-                    if np.sum(valid) >= 5:
-                        t = paired(va[valid], vb[valid])
-                        print(f"      {a} vs {b}: {fmt(t)}")
+                    # 1. Carried-forward (terminal raw carried forward for finished runs)
+                    va_c = np.array([raw_at_evals(tbl[a][seed], e_target, carry_forward=True) for seed in s])
+                    vb_c = np.array([raw_at_evals(tbl[b][seed], e_target, carry_forward=True) for seed in s])
+                    t_c = paired(va_c, vb_c)
+                    # 2. Active-only (both runs reached checkpoint)
+                    va_act = np.array([raw_at_evals(tbl[a][seed], e_target, carry_forward=False) for seed in s])
+                    vb_act = np.array([raw_at_evals(tbl[b][seed], e_target, carry_forward=False) for seed in s])
+                    valid = ~(np.isnan(va_act) | np.isnan(vb_act))
+                    t_act = paired(va_act[valid], vb_act[valid]) if np.sum(valid) >= 5 else None
+                    act_str = f" [active-only n={int(np.sum(valid))}: {fmt(t_act)}]" if t_act else ""
+                    print(f"      {a} vs {b}: {fmt(t_c)}{act_str}")
 
 
 def mode_step3(path):

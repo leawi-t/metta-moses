@@ -323,34 +323,55 @@ Because runs had different termination evaluation counts (medians: $2,427$ for `
 
 ---
 
-## 9. Decisive Next Experiments
+## 9. Empirical Results: Majority7 Budget Scaling Check
 
-On current evidence, static high ratio (`static_100`) provides superior raw search progress compared to dynamic K5 on parity landscapes. K5 is justified only if static high ratios incur hidden costs—specifically code bloat or overfitting. 
+In Phase 0, `majority7` (128 truth-table rows) appeared stagnated at raw score $-19.0$ across all tested ratios, leading to the hypothesis that it constituted an impassable plateau requiring structural representation injection. To test whether this was an asymptotic plateau or another budget truncation artifact, we scaled the evaluation horizon from $1\times$ ($5$ generations, $2,500$ evaluations) to $3\times$ ($15$ generations, $7,500$ evaluations) across paired seeds.
+
+| Arm | Budget | Seed | Raw | Accuracy (Rows/128) | Literals | Evals | Wall Time | Trajectory Progression |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---|
+| `static_14` | $1\times$ (5 gens) | 1 | $-18.0$ | $85.9\%$ ($110/128$) | 13 | 2,500 | $83\text{s}$ | $-28 \to -24 \to -22 \to -19 \to -18$ |
+| `static_100` | $1\times$ (5 gens) | 1 | $-18.0$ | $85.9\%$ ($110/128$) | 13 | 2,500 | $90\text{s}$ | $-28 \to -24 \to -22 \to -19 \to -18$ |
+| `static_14` | $3\times$ (15 gens) | 1 | **$-10.0$** | **$92.2\%$ ($118/128$)** | 25 | 7,500 | $532\text{s}$ | Continues: $-17 \to -16 \to -15 \to -14 \to -13 \to -11 \to \mathbf{-10}$ |
+| `static_100` | $3\times$ (15 gens) | 1 | **$-10.0$** | **$92.2\%$ ($118/128$)** | 25 | 7,500 | $549\text{s}$ | Continues: $-17 \to -16 \to -15 \to -13 \to -12 \to -11 \to \mathbf{-10}$ |
+| `static_14` | $1\times$ (5 gens) | 2 | $-16.0$ | $87.5\%$ ($112/128$) | 14 | 2,500 | $85\text{s}$ | $-28 \to -24 \to -22 \to -18 \to -16$ |
+| `static_100` | $1\times$ (5 gens) | 2 | $-16.0$ | $87.5\%$ ($112/128$) | 14 | 2,500 | $81\text{s}$ | $-28 \to -24 \to -22 \to -18 \to -16$ |
+| `static_14` | $3\times$ (15 gens) | 2 | **$-9.0$** | **$93.0\%$ ($119/128$)** | 23 | 7,500 | $518\text{s}$ | Continues: $-14 \to -13 \to -12 \to -11 \to -10 \to \mathbf{-9}$ |
+| `static_100` | $3\times$ (15 gens) | 2 | **$-10.0$** | **$92.2\%$ ($118/128$)** | 21 | 7,500 | $488\text{s}$ | Continues: $-14 \to -13 \to -12 \to -11 \to \mathbf{-10}$ |
+
+### Decisive Findings:
+1. **100% Budget Truncation Artifact:**
+   - Extending search from 5 to 15 generations produced massive, continuous fitness gains: raw scores improved from $-17.0$ average to **$-9.75$ average** (accuracy jumped from $86.7\%$ to $92.4\%$, $+7.25$ raw improvement).
+   - This decisively confirms that the earlier $-19$ score was not a topological wall or representational impasse, but rather a direct consequence of cutting off search at 2,500 evaluations.
+2. **Computational Scaling & Operational Safeguard:**
+   - Memory footprint on 128 rows grows substantially during exemplar expansions. To prevent Linux kernel OOM-killer crashes under WSL, `majority7` runs must be executed with `--workers=1`.
+
+---
+
+## 10. Decisive Next Experiments
+
+On current evidence, static high ratio (`static_100`) provides superior raw search progress compared to dynamic K5 on parity landscapes. K5 is justified only if static high ratios incur hidden costs—specifically code bloat or overfitting under noisy conditions. 
 
 1. **Decisive Noisy-Data Benchmark (Generalization vs Overfitting):**
    - Inject $5\%–10\%$ label noise into training truth tables; evaluate learned trees against a clean held-out test table.
-   - Arms: `static_14`, `static_100`, `stall_relax_K5`, and optionally `static_1000`.
-   - Domains: `majority5` (fast, solvable baseline) and `parity5` / `parity4`.
+   - Arms: `static_14`, `static_100`, `stall_relax_K5`, and `static_100_rerank14`.
+   - Domain: `majority5` (fast, solvable baseline).
    - **Hypotheses & Outcomes:**
      - *Outcome A (K5 Wins):* If `static_100` overfits to training noise (bloats literals with degraded test accuracy) while K5 preserves test accuracy, K5 earns its place as an overfitting-resistant search intervention.
      - *Outcome B (`static_100` Wins):* If `static_100` does not overfit and maintains superior test accuracy, the finding simplifies: default ratio 14 is excessively punitive on deceptive boolean landscapes, and $r \approx 100$ resolves it at modest cost.
      - *Outcome C (Both Overfit):* If both overfit equally, the result demonstrates fundamental limits of the complexity penalty formulation.
 
-2. **Search-Then-Rerank Arm:**
-   - Run search unconstrained at `static_100`, then re-rank or simplify final candidate trees using base ratio $14.0$. This tests whether parsimonious output can be achieved without penalizing exploratory search.
+2. **Search-Then-Rerank Arm (`static_100_rerank14`):**
+   - Run search unconstrained at `static_100`, then re-rank final candidate trees using base ratio $14.0$. This tests whether parsimonious output can be restored without penalizing exploratory search.
 
-3. **Majority7 Long-Horizon Budget Check:**
-   - Run `majority7` at $3\times$–$5\times$ budget to determine whether its stagnated score ($-19$) is an impassable plateau or a truncation artifact.
-
-4. **Symmetric Candidate Generator Factorial (2×2 Design):**
+3. **Symmetric Candidate Generator Factorial (2×2 Design):**
    - Re-evaluate the candidate generator as a focused $2 \times 2$ factorial: `{original, full_negation} \times {static_100, stall_relax_K5}` at longer budget (e.g. 30–45 generations) to avoid truncation masking generator effects.
 
-5. **Park Mid-Run Injection:**
-   - Representation injection will be paused until genuine stalls are confirmed to persist across $3\times$–$5\times$ budgets.
+4. **Park Mid-Run Injection:**
+   - Representation injection remains parked until genuine stalls are confirmed to persist across $3\times$–$5\times$ budgets.
 
 ---
 
-## 10. CLI Flags & Hyperparameters
+## 11. CLI Flags & Hyperparameters
 
 | Flag | Default | Description |
 |:---|:---:|:---|
@@ -369,7 +390,7 @@ On current evidence, static high ratio (`static_100`) provides superior raw sear
 
 ---
 
-## 9. Verification & Experiment Execution
+## 12. Verification & Experiment Execution
 
 ```sh
 # 1. Run Stall Controller unit tests
@@ -389,7 +410,14 @@ python3 scripts/statistical_analysis.py --mode=step1
 python3 scripts/run_parity5_replication.py
 python3 scripts/statistical_analysis.py --mode=step2
 
-# 6. Step 3: Execute 2x3 Factorial experiment (Generator x Ratio on Parity4)
+# 6. Execute Majority7 Budget Scaling Check (1x vs 3x, workers=1)
+python3 scripts/run_majority7_budget_check.py --workers=1
+
+# 7. Execute Decisive Noisy-Data Benchmark (Majority5, 10% label noise)
+python3 scripts/run_noisy_benchmark.py --seeds 1 2 3 4 5 6 7 8 9 10 --noise-rate 0.10 --workers 2
+python3 scripts/statistical_analysis.py --mode=noisy
+
+# 8. Step 3: Execute Candidate Generator Factorial on Parity4
 python3 scripts/run_factorial_2x3.py
 python3 scripts/statistical_analysis.py --mode=step3
 ```

@@ -330,25 +330,31 @@ def mode_step2(path):
 
 def mode_step3(path):
     recs = load(path)
-    gens, arms = ("original", "full_negation"), ("static_14", "static_100", "stall_relax_K5")
+    gens = ("original", "full_negation")
     p = "parity4"
+    available_arms = sorted({r["arm"] for r in recs if r.get("problem") == p and r.get("status") == "ok"})
+    candidate_arms = [a for a in ("static_100", "stall_relax_K5", "static_14") if a in available_arms]
+    if len(candidate_arms) < 2:
+        print("\n== Step 3: factorial == (insufficient arms; need at least 2 arms)")
+        return
+    arms = tuple(candidate_arms)
     tbls = {}
     bads = {}
     for g in gens:
         tbls[g], bads[g] = table(recs, p, generator=g)
     sets = [set(tbls[g].get(a, {})) for g in gens for a in arms]
     if not all(sets):
-        print("\n== Step 3: factorial == (cells missing; nothing to analyze yet)")
+        print(f"\n== Step 3: factorial == (cells missing among {gens} x {arms}; nothing to analyze yet)")
         return
     seeds = sorted(set.union(*sets) if MISSING == "impute" else set.intersection(*sets))
-    print(f"\n== Step 3: 2x3 factorial on parity4, {len(seeds)} seeds common to all 6 cells ==")
+    print(f"\n== Step 3: 2x{len(arms)} factorial on parity4, {len(seeds)} seeds common to all cells ==")
     V = {(g, a): vec(tbls[g], a, seeds, "best_raw", p) for g in gens for a in arms}
     for g in gens:
         for a in arms:
             v = V[(g, a)]
-            print(f"  {g:<14} {a:<16} mean {v.mean():+.2f} ±{v.std(ddof=1):.2f} median {np.median(v):+.1f}")
+            print(f"  {g:<14} {a:<16} mean {v.mean():+.2f} ±{v.std(ddof=1) if len(v)>1 else 0:.2f} median {np.median(v):+.1f}")
     d = {a: V[("full_negation", a)] - V[("original", a)] for a in arms}
-    print("\n  Generator effect (full_negation - original) per ratio arm, Holm over 3:")
+    print(f"\n  Generator effect (full_negation - original) per ratio arm, Holm over {len(arms)}:")
     res = [(a, paired(V[("full_negation", a)], V[("original", a)])) for a in arms]
     for (a, t), h in zip(res, holm([t["p"] for _, t in res])):
         print(f"    {a:<16} {fmt(t)}  Holm p={h:.4f}")
@@ -357,23 +363,97 @@ def mode_step3(path):
     m, lo, hi = boot_ci(avg)
     print(f"  Generator main effect (mean over arms): {m:+.2f} [{lo:+.2f},{hi:+.2f}] W={W:.1f} p={pw:.4f}")
     print("\n  Interaction (does the generator effect depend on the ratio arm?):")
-    fr = stats.friedmanchisquare(*[d[a] for a in arms])
-    print(f"    Friedman test on per-seed generator effects across arms: chi2={fr.statistic:.2f} p={fr.pvalue:.4f}")
-    cons = [("static_100 vs static_14", d["static_100"] - d["static_14"]),
-            ("stall_relax_K5 vs static_14", d["stall_relax_K5"] - d["static_14"])]
-    out = []
-    for lab, c in cons:
-        W, pc = wilcoxon(c)
-        out.append((lab, boot_ci(c), pc))
-    for (lab, ci, pc), h in zip(out, holm([o[2] for o in out])):
-        print(f"    contrast {lab}: {ci[0]:+.2f} [{ci[1]:+.2f},{ci[2]:+.2f}] p={pc:.4f} Holm p={h:.4f}")
-    print("\n  Ratio effect (mean over generators), Holm over 3:")
+    if len(arms) == 2:
+        diff_inter = d[arms[0]] - d[arms[1]]
+        Wi, pi = wilcoxon(diff_inter)
+        mi, loi, hii = boot_ci(diff_inter)
+        print(f"    Interaction contrast ({arms[0]} - {arms[1]}): {mi:+.2f} [{loi:+.2f},{hii:+.2f}] W={Wi:.1f} p={pi:.4f}")
+    else:
+        fr = stats.friedmanchisquare(*[d[a] for a in arms])
+        print(f"    Friedman test on per-seed generator effects across arms: chi2={fr.statistic:.2f} p={fr.pvalue:.4f}")
+        cons = [("static_100 vs static_14", d["static_100"] - d["static_14"]),
+                ("stall_relax_K5 vs static_14", d["stall_relax_K5"] - d["static_14"])]
+        out = []
+        for lab, c in cons:
+            W, pc = wilcoxon(c)
+            out.append((lab, boot_ci(c), pc))
+        for (lab, ci, pc), h in zip(out, holm([o[2] for o in out])):
+            print(f"    contrast {lab}: {ci[0]:+.2f} [{ci[1]:+.2f},{ci[2]:+.2f}] p={pc:.4f} Holm p={h:.4f}")
+    print(f"\n  Ratio effect (mean over generators), Holm over {len(arms)*(len(arms)-1)//2}:")
     M = {a: np.mean([V[(g, a)] for g in gens], axis=0) for a in arms}
-    pairs = [("static_100", "static_14"), ("stall_relax_K5", "static_14"), ("stall_relax_K5", "static_100")]
+    pairs = [(arms[i], arms[j]) for i in range(len(arms)) for j in range(i+1, len(arms))]
     rr = [(a, b, paired(M[a], M[b])) for a, b in pairs]
     for (a, b, t), h in zip(rr, holm([t["p"] for _, _, t in rr])):
         print(f"    {a} vs {b}: {fmt(t)}  Holm p={h:.4f}")
     print("\n  Interpret absence of a significant interaction as 'not detected at this sample size', not 'rejected'.")
+
+
+def mode_noisy(path):
+    recs = load(path)
+    if not recs:
+        print(f"No records found in {path}")
+        return
+    noise_rates = sorted(list({r.get("noise_rate", 0.10) for r in recs}))
+    for nr in noise_rates:
+        sub = [r for r in recs if r.get("noise_rate", 0.10) == nr and r.get("status") == "ok"]
+        arms = sorted(list({r["arm"] for r in sub}))
+        print(f"\n== Noisy Benchmark on Majority5 ({int(nr*100)}% label noise, {len(sub)} runs) ==")
+
+        tbl = defaultdict(dict)
+        for r in sub:
+            tbl[r["arm"]][r["seed"]] = r
+
+        print(f"\n  {'Arm':<22} {'N':<3} {'TrainRaw':<16} {'TestRaw':<16} {'TestErr':<14} {'Solves(Clean)':<16} {'Lits':<14} {'Time':<6}")
+        print("  " + "-" * 110)
+        for arm in arms:
+            seeds = sorted(tbl[arm].keys())
+            n = len(seeds)
+            if n == 0:
+                continue
+            tr_raw = np.array([tbl[arm][s]["train_raw"] for s in seeds if tbl[arm][s].get("train_raw") is not None])
+            ts_raw = np.array([tbl[arm][s]["test_raw"] for s in seeds if tbl[arm][s].get("test_raw") is not None])
+            ts_err = np.array([tbl[arm][s]["test_error"] for s in seeds if tbl[arm][s].get("test_error") is not None])
+            lits = np.array([tbl[arm][s]["literals"] for s in seeds if tbl[arm][s].get("literals") is not None])
+            slv = sum(bool(tbl[arm][s].get("test_perfect")) for s in seeds)
+            times = np.array([tbl[arm][s].get("wall_time", 0) for s in seeds])
+            lo, hi = wilson(slv, n)
+            print(f"  {arm:<22} n={n:<2} {tr_raw.mean():+5.2f}±{tr_raw.std(ddof=1) if n>1 else 0:4.2f} (med {np.median(tr_raw):+4.1f}) "
+                  f"{ts_raw.mean():+5.2f}±{ts_raw.std(ddof=1) if n>1 else 0:4.2f} "
+                  f"{ts_err.mean():4.2f}±{ts_err.std(ddof=1) if n>1 else 0:4.2f} (med {np.median(ts_err):3.1f}) "
+                  f"{slv}/{n} [{lo:.2f},{hi:.2f}] "
+                  f"{lits.mean():4.1f}±{lits.std(ddof=1) if n>1 else 0:4.1f} (med {np.median(lits):3.1f}) "
+                  f"{np.median(times):4.0f}s")
+
+        print("\n  Paired Differences on Clean Ground-Truth Test Raw (Holm-corrected across key contrasts):")
+        contrasts = [
+            ("stall_relax_K5", "static_14"),
+            ("static_100", "static_14"),
+            ("stall_relax_K5", "static_100"),
+            ("static_100_rerank14", "static_100"),
+        ]
+        test_res = []
+        for a, b in contrasts:
+            if a in tbl and b in tbl:
+                common = sorted(set(tbl[a].keys()) & set(tbl[b].keys()))
+                if len(common) >= 3:
+                    va = np.array([tbl[a][s]["test_raw"] for s in common])
+                    vb = np.array([tbl[b][s]["test_raw"] for s in common])
+                    test_res.append((a, b, common, paired(va, vb)))
+        if test_res:
+            pvals = [t["p"] for _, _, _, t in test_res]
+            adjs = holm(pvals)
+            for (a, b, comm, t), h in zip(test_res, adjs):
+                print(f"    {a} vs {b} (n={len(comm)}): {fmt(t)}  Holm p={h:.4f}")
+
+        print("\n  Paired Differences on Literals / Code Bloat:")
+        for a, b in contrasts:
+            if a in tbl and b in tbl:
+                common = sorted(set(tbl[a].keys()) & set(tbl[b].keys()))
+                if len(common) >= 3:
+                    va = np.array([tbl[a][s]["literals"] for s in common])
+                    vb = np.array([tbl[b][s]["literals"] for s in common])
+                    t = paired(va, vb)
+                    print(f"    {a} vs {b} (n={len(comm)}): {fmt(t)}")
 
 
 def selftest():
@@ -392,11 +472,12 @@ def selftest():
 def main():
     global ZM, MISSING, EQUIV
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["stall", "step1", "step2", "step3", "all", "selftest"], default="stall")
+    ap.add_argument("--mode", choices=["stall", "step1", "step2", "step3", "noisy", "all", "selftest"], default="stall")
     ap.add_argument("--stall-file", default="stall_relaxation_results.json")
     ap.add_argument("--step1-file", default="budget_check_results.json")
     ap.add_argument("--step2-file", default="parity5_replication_results.json")
     ap.add_argument("--step3-file", default="factorial_2x3_results.json")
+    ap.add_argument("--noisy-file", default="noisy_benchmark_results.json")
     ap.add_argument("--zero-method", default="pratt", choices=["wilcox", "pratt", "zsplit"])
 
     ap.add_argument("--missing", default="intersect", choices=["intersect", "impute"])
@@ -413,6 +494,8 @@ def main():
         mode_step2(a.step2_file)
     if a.mode in ("step3", "all"):
         mode_step3(a.step3_file)
+    if a.mode in ("noisy", "all"):
+        mode_noisy(a.noisy_file)
 
 
 if __name__ == "__main__":

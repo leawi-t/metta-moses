@@ -36,6 +36,7 @@ ARMS = {
     "static_100": ["--complexityRatio=100.0", "--stallRelaxationMode=False"],
     "stall_relax_K5": ["--stallRelaxationMode=dynamic", "--baseComplexityRatio=14.0",
                        "--relaxedComplexityRatio=100.0"] + K5,
+    "static_1000": ["--complexityRatio=1000.0", "--stallRelaxationMode=False"],
 }
 
 
@@ -68,15 +69,19 @@ def generate_noisy_csv(noise_rate, seed, ground_truth):
 
 
 def eval_metta_tree(tree_str, inputs):
+    tree_str = tree_str.strip()
+    if not tree_str.startswith("("):
+        tree_str = f"({tree_str})"
     tokens = tree_str.replace("(", " ( ").replace(")", " ) ").split()
 
     def parse_tokens(toks):
         t = toks.pop(0)
         if t == "(":
             sub = []
-            while toks[0] != ")":
+            while toks and toks[0] != ")":
                 sub.append(parse_tokens(toks))
-            toks.pop(0)
+            if toks and toks[0] == ")":
+                toks.pop(0)
             return sub
         return t
 
@@ -91,6 +96,10 @@ def eval_metta_tree(tree_str, inputs):
             if node.lower() == "false":
                 return False
             raise ValueError(f"Unknown literal: {node}")
+        if not node:
+            return False
+        if len(node) == 1:
+            return evaluate(node[0])
         op = node[0]
         if op == "NOT":
             return not evaluate(node[1])
@@ -128,7 +137,8 @@ def evaluate_candidates(final_result_str, ground_truth):
                 if pred == bool(row[-1]):
                     test_correct += 1
             test_raw = -(len(ground_truth) - test_correct)
-        except Exception:
+        except Exception as e:
+            print(f"\n  [eval error on '{tree_str}']: {e}")
             test_raw = -len(ground_truth)
             test_correct = 0
 
@@ -182,7 +192,7 @@ def run_one_noisy_trial(arm, seed, noise_rate, max_gen, timeout, ground_truth, c
         return rec, None
 
     # Evaluate final top trees on clean ground truth
-    m_final = re.search(r"\(FinalResult\s*\((.*?)\)\)\n", out, re.DOTALL)
+    m_final = re.search(r"\(FinalResult\s*\((.*)\)\)", out, re.DOTALL)
     top_cand, all_cands = evaluate_candidates(m_final.group(1) if m_final else "", ground_truth)
 
     if top_cand:
@@ -215,37 +225,62 @@ def run_one_noisy_trial(arm, seed, noise_rate, max_gen, timeout, ground_truth, c
     return rec, rerank_rec
 
 
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--noise-rate", type=float, default=0.10, help="fraction of labels flipped (default: 0.10 = 3 rows)")
     ap.add_argument("--max-gen", type=int, default=15, help="maxGen (default: 15)")
     ap.add_argument("--timeout", type=int, default=300, help="timeout per run in seconds")
+    ap.add_argument("--workers", type=int, default=2, help="concurrent workers (default: 2)")
     ap.add_argument("--seeds", type=int, nargs="+", default=list(range(1, 21)), help="seed list (default: 1..20)")
-    ap.add_argument("--arms", nargs="+", default=list(ARMS.keys()), help="arms to run")
+    ap.add_argument("--arms", nargs="+", default=["static_14", "static_100", "stall_relax_K5"], help="arms to run")
     ap.add_argument("--output-file", default=OUTPUT_FILE, help="output JSON file")
     a = ap.parse_args()
 
     ground_truth = get_majority5_ground_truth()
     commit = git_commit()
     existing = load_json(a.output_file)
-    done_keys = {(r.get("arm"), r.get("seed"), r.get("noise_rate")) for r in existing if r.get("status") == "ok"}
+    done_keys = {(r.get("arm"), r.get("seed"), r.get("noise_rate")) for r in existing if r.get("status") == "ok" and r.get("test_raw") is not None}
 
     jobs = [(arm, s) for s in a.seeds for arm in a.arms if (arm, s, a.noise_rate) not in done_keys]
-    print(f"Noisy Benchmark on Majority5 ({int(a.noise_rate*100)}% noise): {len(jobs)} jobs to execute.")
+    print(f"Noisy Benchmark on Majority5 ({int(a.noise_rate*100)}% noise, workers={a.workers}): {len(jobs)} jobs to execute.", flush=True)
+    if not jobs:
+        print("All jobs already completed.", flush=True)
+        return
 
     results = list(existing)
-    for arm, s in jobs:
-        print(f"Running {arm} seed={s} noise={a.noise_rate}...", end=" ", flush=True)
+    lock = threading.Lock()
+
+    def worker_job(job):
+        arm, s = job
         rec, rerank_rec = run_one_noisy_trial(arm, s, a.noise_rate, a.max_gen, a.timeout, ground_truth, commit=commit)
-        results = [r for r in results if not (r.get("arm") == arm and r.get("seed") == s and r.get("noise_rate") == a.noise_rate)]
-        results.append(rec)
+        with lock:
+            nonlocal results
+            results = [r for r in results if not (r.get("arm") == arm and r.get("seed") == s and r.get("noise_rate") == a.noise_rate)]
+            results.append(rec)
+            if rerank_rec:
+                results = [r for r in results if not (r.get("arm") == rerank_rec["arm"] and r.get("seed") == s and r.get("noise_rate") == a.noise_rate)]
+                results.append(rerank_rec)
+            save_atomic(results, a.output_file)
+        res_str = f"[{rec.get('status', 'OK').upper()}] {arm} s={s}: TrainRaw={rec.get('train_raw')} TestRaw={rec.get('test_raw')} Lits={rec.get('literals')} ({rec.get('wall_time', 0):.1f}s)"
         if rerank_rec:
-            results = [r for r in results if not (r.get("arm") == rerank_rec["arm"] and r.get("seed") == s and r.get("noise_rate") == a.noise_rate)]
-            results.append(rerank_rec)
-        save_atomic(results, a.output_file)
-        print(f"TrainRaw={rec.get('train_raw')} TestRaw={rec.get('test_raw')} Lits={rec.get('literals')} ({rec.get('wall_time', 0):.1f}s)")
-        if rerank_rec:
-            print(f"  -> [Rerank14] TestRaw={rerank_rec.get('test_raw')} Lits={rerank_rec.get('literals')}")
+            res_str += f" | [Rerank14] TestRaw={rerank_rec.get('test_raw')} Lits={rerank_rec.get('literals')}"
+        print(res_str, flush=True)
+
+    if a.workers <= 1:
+        for j in jobs:
+            worker_job(j)
+    else:
+        with ThreadPoolExecutor(max_workers=a.workers) as pool:
+            futures = [pool.submit(worker_job, j) for j in jobs]
+            for f in as_completed(futures):
+                try:
+                    f.result()
+                except Exception as e:
+                    print(f"Worker exception: {e}")
 
 
 if __name__ == "__main__":

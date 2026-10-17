@@ -47,7 +47,7 @@ def _g(pattern, text, default, cast):
 def parse_output(out):
     r = {"best_raw": None, "best_pen": None, "literals": 0, "expansions": 0, "unique_visited": 0,
          "relaxed_gens": 0, "fraction_relaxed": 0.0, "switch_count": 0, "total_evals": 0,
-         "final_rescored_raw": None}
+         "final_rescored_raw": None, "raw_trajectory": [], "evals_trajectory": []}
     m = re.search(r"\(Step2-Summary (.*?)\)", out)
     if m:
         s = m.group(1)
@@ -58,11 +58,9 @@ def parse_output(out):
         r["fraction_relaxed"] = _g(r"FractionRelaxed:\s*" + FLOAT, s, 0.0, float)
         r["switch_count"] = _g(r"SwitchCount:\s*(\d+)", s, 0, int)
         r["termination"] = _g(r"Termination:\s*(\w+)", s, None, str)
-    if r["best_raw"] is None:
-
-        ever = re.findall(r"\(Step2-BestRaw Gen: \d+ Exp: \d+ Ever: " + FLOAT, out)
-        if ever:
-            r["best_raw"] = float(ever[-1])
+    ever = [float(x) for x in re.findall(r"\(Step2-BestRaw Gen: \d+ Exp: \d+ Ever: " + FLOAT, out)]
+    if r["best_raw"] is None and ever:
+        r["best_raw"] = ever[-1]
     gens = re.findall(r"\(Step2-GenStats Gen: \d+ Exp: \d+ BestRaw: " + FLOAT +
                       r" Literals: (\d+) BestPen: " + FLOAT, out)
     if gens:
@@ -70,8 +68,16 @@ def parse_output(out):
         r["best_pen"] = float(gens[-1][2])
         if not r["expansions"]:
             r["expansions"] = len(gens)
-    evals = re.findall(r"\(OptimizedDeme:\s*(\d+)\)", out)
-    r["total_evals"] = sum(int(x) for x in evals) if evals else 0
+    evals = [int(x) for x in re.findall(r"\(OptimizedDeme:\s*(\d+)\)", out)]
+    r["total_evals"] = sum(evals) if evals else 0
+    cum_evals = []
+    c = 0
+    for e in evals:
+        c += e
+        cum_evals.append(c)
+    min_len = min(len(ever), len(cum_evals))
+    r["raw_trajectory"] = ever[:min_len]
+    r["evals_trajectory"] = cum_evals[:min_len]
     mf = re.search(r"\(FinalResult\s*\(\(\((.*?)\)\s*([-+]?\d+)\)", out)
     r["final_rescored_raw"] = float(mf.group(2)) if mf else r["best_raw"]
     return r

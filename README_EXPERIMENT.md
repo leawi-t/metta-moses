@@ -244,36 +244,47 @@ The pre-registered budget check tested whether the 0% solve rate on `parity4` wa
 
 *(Note: `static_100` seed 6 hit the 1,800s safety timeout at raw $-1.0$ after 21,209 evals, treated conservatively as censored).*
 
-### Key Takeaways from Step 1:
-1. **Solves Appear Under $3\times$ Budget:**
-   - `stall_relax_K5` on Seed 8 found the **exact solution ($0.0$, `solved`)** at $13,168$ evaluations ($503.3\text{s}$, $24$ literals).
-   - This decisively confirms the reviewer's diagnostic: the $0\%$ solve rate in Phase 1 was largely budget-limited (truncated by the 15-generation cap $\approx 6,500$ evals), **not** an impassable structural barrier.
-2. **Zero Regressions Across Seeds:**
-   - Out of 19 paired comparisons across both arms, there were **$11$ wins, $8$ ties, and $0$ regressions**.
-   - `stall_relax_K5` achieved a statistically significant raw score improvement over its $1\times$ baseline ($p = 0.0312^*$, 95% bootstrap CI: $[+0.30, +1.10]$).
-   - `static_100` median raw score advanced from $-2.5$ to **$-1.0$**, with $6$ of $10$ seeds reaching $-1.0$ (only 1 bit error away from optimal).
-3. **Efficiency of $K=5$ Maintained:**
-   - `stall_relax_K5` required only $11,772$ median evals and $430\text{s}$ median runtime ($56\%$ less wall time and $44\%$ fewer evaluations than `static_100` at $20,999$ evals / $987\text{s}$), while being the only arm to find the exact solution.
+### Key Findings & Nuanced Interpretations from Step 1:
+1. **Budget is a Bottleneck (Truncation vs Plateaus):**
+   - Both arms continue to improve after generation 15: across the 19 paired runs, there are **11 wins, 0 losses, and 8 ties**.
+   - This proves that earlier apparent "stalls" at 15 generations ($\approx 6,500$ evals) were truncation artifacts rather than asymptotic search plateaus.
+   - *Determinism Verification:* Best-ever raw score is monotonically non-decreasing over search. Because seeds are deterministic (verified by exact replication of Seed 8), the first 15 generations of a $3\times$ run are identical to the $1\times$ run. "Zero regressions" is mathematically expected; the informative finding is that **$11/19$ seeds ($57.9\%$) actively improved past generation 15**.
+2. **Arm Comparison & P-Values Reflect Pair Counts:**
+   - The differing p-values ($p = 0.0312$ for K5 vs $p = 0.0625$ for `static_100`) reflect non-tied pair counts (6 pairs for K5 vs 5 for `static_100`), not a difference in effect size.
+   - With 6 non-tied pairs, the smallest possible exact two-sided Wilcoxon $p$-value is $0.03125$; with 5 pairs, it is $0.0625$.
+   - In fact, `static_100` achieved a slightly larger average raw gain ($+1.00$ vs $+0.70$) with 0 losses, reaching a better median raw ($-1.0$ vs $-2.0$) and a higher breakout rate ($88.9\%$ vs $70.0\%$). Both arms demonstrate the same phenomenon of budget truncation.
+3. **Reachable Solves vs Arm Separation:**
+   - Seed 8 under `stall_relax_K5` reached the **exact solution ($0.0$, `solved`)** at $13,168$ evaluations ($503.3\text{s}$, $24$ literals).
+   - However, $1/10$ vs $0/9$ solves does not statistically separate the two arms (Fisher's exact test $p = 1.0$). Reaching a solve demonstrates that exact parity4 solutions are structurally reachable once budget constraints are lifted, rather than proving K5 uniquely capable.
+4. **Efficiency Comparisons at Equal Evaluations:**
+   - Both arms ran up to 45 generations. K5 using fewer evaluations ($11,772$ vs $20,999$ medians) indicates that it executed fewer evaluations per generation, not that it arrived at good solutions faster.
+   - Rigorous efficiency comparisons require comparing raw score at **equal cumulative evaluations**, motivating the addition of `raw_trajectory` and `evals_trajectory` tracking to runner harnesses.
+5. **Architectural & Protocol Consequences:**
+   - *Stall Census:* Stalls only count if they persist at $3\times$–$5\times$ budget. Only persistent plateaus are genuine candidates for representation injection.
+   - *Ratio Sweeps:* Sweeps at 15 generations captured early progress rates under truncation rather than terminal solution quality.
+   - *Majority7 Check:* At $-19$, majority7 is likely budget-limited as well; a cheap $3\times$ or $5\times$ check is recommended.
+   - *Factorial Horizon:* The representation generator factorial should run with longer budgets (or a $2\times2$ design) to prevent truncation artifacts from masking generator effects.
+   - *Timeout Policy:* Safety timeouts for long runs will be set to prevent truncation while logging partial trajectories (as done for `static_100` seed 6).
 
 ---
 
 ## 8. Next Steps Protocol (Steps 2–3)
 
 1. **Step 2: Parity5 Fresh-Seed Replication (Seeds 21–60)**
-   - Replicate Parity5 on $N=40$ independent fresh seeds across `static_14`, `static_100`, `stall_relax_K5`, and `trigger_only_K5`.
-   - *Pre-Registered Test:* Single targeted paired Wilcoxon test and bootstrap CI on K5 vs `static_14`, plus direct paired test of K5 vs matched control `trigger_only_K5`.
+   - Replicate Parity5 on $N=40$ independent fresh seeds across `static_14`, `static_100`, `stall_relax_K5`, `trigger_only_K5` (matched K=5 control), and `trigger_only_ctrl` (K=3 control).
+   - *Pre-Registered Test:* Confirmatory family (Holm-corrected): K5 vs `static_14`, and K5 vs matched control `trigger_only_K5`.
+   - *Trajectory Alignment:* Every generation logs `OptimizedDeme` and `Step2-BestRaw`, recording `raw_trajectory` and `evals_trajectory` to enable comparison at equal evaluation budgets (e.g. at 1,000, 2,000, 2,500, 3,000 evals).
    - *Runner:* `scripts/run_parity5_replication.py`
 
 2. **Step 3: Symmetric Candidate Generator × Complexity Ratio Factorial on Parity4**
-   - $2 \times 3$ Factorial layout testing whether complexity penalty masked symmetric candidate generator benefits at ratio 14.
-   - Factors: `{original, full_negation}` $\times$ `{static_14, static_100, stall_relax_K5}` across 30 paired seeds (180 runs).
+   - Factorial layout testing whether complexity penalty masked symmetric candidate generator benefits at ratio 14.
+   - Design: 2×2 (`{original, full_negation}` × `{static_100, stall_relax_K5}`) or 2×3 design across paired seeds with adequate evaluation budget.
    - *Models:* Two-Way ANOVA, non-parametric 2-way permutation tests, and interaction contrast $[(\text{full}_{100} - \text{orig}_{100}) - (\text{full}_{14} - \text{orig}_{14})]$ with 95% bootstrap CI.
    - *Runner:* `scripts/run_factorial_2x3.py`
 
-
 ---
 
-## 8. CLI Flags & Hyperparameters
+## 9. CLI Flags & Hyperparameters
 
 | Flag | Default | Description |
 |:---|:---:|:---|

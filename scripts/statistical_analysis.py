@@ -143,6 +143,20 @@ def vec(tbl, arm, seeds, metric, problem):
     return np.array(out)
 
 
+def raw_at_evals(run_record, target_evals):
+    traj_evals = run_record.get("evals_trajectory", [])
+    traj_raw = run_record.get("raw_trajectory", [])
+    if not traj_evals or not traj_raw:
+        return run_record.get("best_raw")
+    val = traj_raw[0]
+    for ev, r in zip(traj_evals, traj_raw):
+        if ev <= target_evals:
+            val = r
+        else:
+            break
+    return val
+
+
 def report_drop(tbl, bad, arms, seeds):
     for a in arms:
         miss = sorted((set(seeds) - set(tbl.get(a, {}))))
@@ -280,6 +294,26 @@ def mode_step2(path):
         s = seeds_for(tbl, ["stall_relax_K5", "static_14"], p)
         x, y, pm = mcnemar(vec(tbl, "stall_relax_K5", s, "breakout", p), vec(tbl, "static_14", s, "breakout", p))
         print(f"    breakout K5-only {x}, static_14-only {y}, exact McNemar p={pm:.4f}")
+
+    has_trajectories = any(r.get("evals_trajectory") for a in tbl for r in tbl[a].values())
+    if has_trajectories:
+        print("\n  Trajectory comparison at equal evaluations:")
+        eval_milestones = [1000, 2000, 2500, 3000]
+        for e_target in eval_milestones:
+            print(f"\n    At {e_target} cumulative evaluations:")
+            for arm in tbl:
+                vals = [raw_at_evals(r, e_target) for r in tbl[arm].values() if raw_at_evals(r, e_target) is not None]
+                if vals:
+                    print(f"      {arm:<20} mean {np.mean(vals):+6.2f}  med {np.median(vals):+5.1f}")
+            for a, b in (("stall_relax_K5", "static_14"), ("stall_relax_K5", "static_100")):
+                if a in tbl and b in tbl:
+                    s = seeds_for(tbl, [a, b], p)
+                    va = np.array([raw_at_evals(tbl[a][seed], e_target) for seed in s])
+                    vb = np.array([raw_at_evals(tbl[b][seed], e_target) for seed in s])
+                    valid = ~(np.isnan(va) | np.isnan(vb))
+                    if np.sum(valid) >= 5:
+                        t = paired(va[valid], vb[valid])
+                        print(f"      {a} vs {b}: {fmt(t)}")
 
 
 def mode_step3(path):

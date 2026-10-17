@@ -15,12 +15,24 @@ _current_gen_metapop_trees = []
 _distinct_culled_better_raw_keys = set()
 _culled_better_raw_archive = {}
 
+_termination_reason = "unknown"
+
 def get_best_raw_ever():
     return _best_raw_ever
+
+def set_termination_reason(reason):
+    global _termination_reason
+    _termination_reason = str(reason)
+    return True
+
+def get_termination_reason():
+    return _termination_reason
 
 def reset():
     global _best_raw_ever, _expansion_count, _raw_levels, _total_culled, _total_better_raw_worse_pen, _per_gen_progression
     global _current_gen_candidates, _current_gen_metapop_trees, _distinct_culled_better_raw_keys, _culled_better_raw_archive
+    global _termination_reason
+    _termination_reason = "unknown"
     _best_raw_ever = -1e9
     _expansion_count = 0
     _raw_levels = {}
@@ -34,6 +46,7 @@ def reset():
     visited_tracker.reset()
     stall_controller.reset_controller()
     return True
+
 
 
 def register_deme_candidate(tree_str, raw, pen, cpxy):
@@ -156,6 +169,7 @@ def log_summary():
     st = visited_tracker.stats()
     summ = stall_controller._controller.get_summary()
     levels_str = " ".join(f"{k}:{v}" for k, v in sorted(_raw_levels.items()))
-    print(f"(Step2-Summary UniqueVisited: {st['unique_keys']} TotalExpansions: {st['total_visits']} FallbackCount: {st['fallback_count']} BestRaw: {_best_raw_ever} BetterRawWorsePen: {_total_better_raw_worse_pen} DistinctCulledBetterRaw: {len(_distinct_culled_better_raw_keys)} Culled: {_total_culled} RelaxedGens: {summ['total_relaxed_gens']} FractionRelaxed: {summ['fraction_relaxed']:.2f} SwitchCount: {summ['switch_count']} Levels: [{levels_str}])", flush=True)
+    print(f"(Step2-Summary UniqueVisited: {st['unique_keys']} TotalExpansions: {st['total_visits']} FallbackCount: {st['fallback_count']} BestRaw: {_best_raw_ever} BetterRawWorsePen: {_total_better_raw_worse_pen} DistinctCulledBetterRaw: {len(_distinct_culled_better_raw_keys)} Culled: {_total_culled} RelaxedGens: {summ['total_relaxed_gens']} FractionRelaxed: {summ['fraction_relaxed']:.2f} SwitchCount: {summ['switch_count']} Termination: {_termination_reason} Levels: [{levels_str}])", flush=True)
     return True
+
 

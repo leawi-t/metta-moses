@@ -139,10 +139,10 @@ $optimDeme
 ;; The number of expansions in the open cog classic is equivalent to the number of deme expansions. That looks like the same thing we are doing here but not sure.
 (= (runMoses $maxGen $maxScore $metaPop $nExpansion $nDeme $context $optimize)
 (if (== $maxGen 0)
-    (if (<= (param maxCandOutput) (OS.length $metaPop))
-        (let $topCandidates (OS.getTopN (param maxCandOutput) $metaPop) $topCandidates)
-        $metaPop
-  )
+    (let* (($_ (py-call (logger_helper.set_termination_reason "max_gen_reached"))))
+      (if (<= (param maxCandOutput) (OS.length $metaPop))
+          (let $topCandidates (OS.getTopN (param maxCandOutput) $metaPop) $topCandidates)
+          $metaPop))
     (let*
      (
        ($_ (println! (Generation $maxGen)))
@@ -175,10 +175,12 @@ $optimDeme
  ;; scalar `$maxScore`. The Cscore's complexity / penalty fields are
  ;; consulted elsewhere when ranking candidates but not at termination.
  (if (>= (getScore $topScore) $maxScore)
-         (if (<= (param maxCandOutput) (OS.length $nextMetaPop))
-             (OS.getTopN (param maxCandOutput) $nextMetaPop)
-             $nextMetaPop)
+         (let* (($_ (py-call (logger_helper.set_termination_reason "solved"))))
+           (if (<= (param maxCandOutput) (OS.length $nextMetaPop))
+               (OS.getTopN (param maxCandOutput) $nextMetaPop)
+               $nextMetaPop))
          (runMoses (- $maxGen 1) $maxScore $nextMetaPop $nExpansion $nDeme $nextContext $optimize)))))
+
 
 
 ;; Some helpers specific to final testing

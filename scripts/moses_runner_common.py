@@ -45,6 +45,8 @@ def _g(pattern, text, default, cast):
 
 
 def parse_output(out):
+    if isinstance(out, bytes):
+        out = out.decode("utf-8", errors="replace")
     r = {"best_raw": None, "best_pen": None, "literals": 0, "expansions": 0, "unique_visited": 0,
          "relaxed_gens": 0, "fraction_relaxed": 0.0, "switch_count": 0, "total_evals": 0,
          "final_rescored_raw": None, "raw_trajectory": [], "evals_trajectory": []}

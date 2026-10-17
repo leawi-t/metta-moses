@@ -68,72 +68,105 @@ def generate_noisy_csv(noise_rate, seed, ground_truth):
     return csv_path, flip_indices
 
 
-def eval_metta_tree(tree_str, inputs):
-    tree_str = tree_str.strip()
-    if not tree_str.startswith("("):
-        tree_str = f"({tree_str})"
-    tokens = tree_str.replace("(", " ( ").replace(")", " ) ").split()
-
-    def parse_tokens(toks):
+def parse_sexpr(s):
+    tokens = s.replace("(", " ( ").replace(")", " ) ").split()
+    if not tokens:
+        return None
+    def parse(toks):
         t = toks.pop(0)
         if t == "(":
             sub = []
             while toks and toks[0] != ")":
-                sub.append(parse_tokens(toks))
+                sub.append(parse(toks))
             if toks and toks[0] == ")":
                 toks.pop(0)
             return sub
         return t
+    try:
+        return parse(tokens)
+    except Exception:
+        return None
 
-    ast = parse_tokens(tokens)
 
-    def evaluate(node):
-        if isinstance(node, str):
-            if node in inputs:
-                return inputs[node]
-            if node.lower() == "true":
-                return True
-            if node.lower() == "false":
-                return False
-            raise ValueError(f"Unknown literal: {node}")
-        if not node:
+def tree_to_str(node):
+    if isinstance(node, list):
+        return "(" + " ".join(tree_to_str(c) for c in node) + ")"
+    return str(node)
+
+
+def count_node_literals(node):
+    if isinstance(node, str):
+        return 1 if re.match(r"^X\d+$", node) else 0
+    if isinstance(node, list):
+        return sum(count_node_literals(c) for c in node)
+    return 0
+
+
+def evaluate_ast(node, inputs):
+    if isinstance(node, str):
+        if node in inputs:
+            return inputs[node]
+        if node.lower() == "true":
+            return True
+        if node.lower() == "false":
             return False
-        if len(node) == 1:
-            return evaluate(node[0])
-        op = node[0]
-        if op == "NOT":
-            return not evaluate(node[1])
-        if op == "AND":
-            return all(evaluate(child) for child in node[1:])
-        if op == "OR":
-            return any(evaluate(child) for child in node[1:])
-        raise ValueError(f"Unknown op: {op}")
-
-    return evaluate(ast)
-
-
-def count_tree_literals(tree_str):
-    tokens = tree_str.replace("(", " ").replace(")", " ").split()
-    return sum(1 for t in tokens if re.match(r"^X\d+$", t))
+        raise ValueError(f"Unknown literal: {node}")
+    if not node:
+        return False
+    if len(node) == 1:
+        return evaluate_ast(node[0], inputs)
+    op = node[0]
+    if op == "NOT":
+        return not evaluate_ast(node[1], inputs)
+    if op == "AND":
+        return all(evaluate_ast(c, inputs) for c in node[1:])
+    if op == "OR":
+        return any(evaluate_ast(c, inputs) for c in node[1:])
+    raise ValueError(f"Unknown op: {op}")
 
 
 def evaluate_candidates(final_result_str, ground_truth):
     """Parses candidates from (FinalResult (((<tree> <raw>) ...))) and evaluates on clean ground truth."""
-    pairs = re.findall(r"\(\((.*?)\)\s+([-+]?\d*\.?\d+)\)", final_result_str)
+    if not final_result_str:
+        return None, []
+
+    ast = parse_sexpr(final_result_str)
+    if not ast or not isinstance(ast, list):
+        return None, []
+
+    pairs = []
+    for item in ast:
+        if isinstance(item, list) and len(item) == 2:
+            try:
+                score = float(item[1])
+                tree_ast = item[0]
+                if isinstance(tree_ast, list) and len(tree_ast) == 1 and isinstance(tree_ast[0], list):
+                    tree_ast = tree_ast[0]
+                pairs.append((tree_ast, score))
+            except (ValueError, TypeError):
+                if isinstance(item[0], list):
+                    for sub in item:
+                        if isinstance(sub, list) and len(sub) == 2:
+                            try:
+                                score = float(sub[1])
+                                tree_ast = sub[0]
+                                if isinstance(tree_ast, list) and len(tree_ast) == 1 and isinstance(tree_ast[0], list):
+                                    tree_ast = tree_ast[0]
+                                pairs.append((tree_ast, score))
+                            except Exception:
+                                pass
     if not pairs:
         return None, []
-    
+
     evaluated = []
-    for tree_str, train_raw in pairs:
-        tree_str = tree_str.strip()
-        tr = float(train_raw)
-        lits = count_tree_literals(tree_str)
-        # Evaluate on clean ground truth
+    for tree_ast, tr in pairs:
+        tree_str = tree_to_str(tree_ast)
+        lits = count_node_literals(tree_ast)
         test_correct = 0
         try:
             for row in ground_truth:
                 inp = {f"X{i+1}": bool(row[i]) for i in range(5)}
-                pred = eval_metta_tree(tree_str, inp)
+                pred = evaluate_ast(tree_ast, inp)
                 if pred == bool(row[-1]):
                     test_correct += 1
             test_raw = -(len(ground_truth) - test_correct)
@@ -152,7 +185,7 @@ def evaluate_candidates(final_result_str, ground_truth):
             "pen_14": tr - lits / 14.0,
             "pen_100": tr - lits / 100.0,
         })
-    return evaluated[0], evaluated
+    return (evaluated[0] if evaluated else None), evaluated
 
 
 def run_one_noisy_trial(arm, seed, noise_rate, max_gen, timeout, ground_truth, commit="unknown"):
@@ -183,7 +216,7 @@ def run_one_noisy_trial(arm, seed, noise_rate, max_gen, timeout, ground_truth, c
     except subprocess.TimeoutExpired as e:
         rec["wall_time"] = time.time() - t0
         rec["status"] = "timeout"
-        out = e.stdout or ""
+        out = e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
         rec.update(parse_output(out))
     except Exception as e:
         rec["wall_time"] = time.time() - t0
@@ -191,9 +224,51 @@ def run_one_noisy_trial(arm, seed, noise_rate, max_gen, timeout, ground_truth, c
         rec["error_msg"] = str(e)
         return rec, None
 
+    if isinstance(out, bytes):
+        out = out.decode("utf-8", errors="replace")
+
     # Evaluate final top trees on clean ground truth
-    m_final = re.search(r"\(FinalResult\s*\((.*)\)\)", out, re.DOTALL)
+    m_final = re.search(r"\(FinalResult\s+(\(.*)", out, re.DOTALL)
     top_cand, all_cands = evaluate_candidates(m_final.group(1) if m_final else "", ground_truth)
+
+    if not top_cand:
+        cand_trees = []
+        for line in out.splitlines():
+            if line.startswith("(SelectedTree:"):
+                s = line[len("(SelectedTree:"):].strip()
+                if s.endswith(")"):
+                    s = s[:-1].strip()
+                cand_trees.append(s)
+        if cand_trees:
+            evaluated = []
+            for t_str in cand_trees:
+                t_ast = parse_sexpr(t_str)
+                if not t_ast:
+                    continue
+                lits = count_node_literals(t_ast)
+                test_correct = 0
+                try:
+                    for row in ground_truth:
+                        inp = {f"X{i+1}": bool(row[i]) for i in range(5)}
+                        if evaluate_ast(t_ast, inp) == bool(row[-1]):
+                            test_correct += 1
+                    test_raw = -(len(ground_truth) - test_correct)
+                except Exception:
+                    test_raw = -len(ground_truth)
+                    test_correct = 0
+                evaluated.append({
+                    "tree": t_str,
+                    "train_raw": rec.get("best_raw", 0.0),
+                    "test_raw": test_raw,
+                    "test_correct": test_correct,
+                    "test_error": len(ground_truth) - test_correct,
+                    "literals": lits,
+                    "pen_14": (rec.get("best_raw") or 0.0) - lits / 14.0,
+                    "pen_100": (rec.get("best_raw") or 0.0) - lits / 100.0,
+                })
+            if evaluated:
+                all_cands = evaluated
+                top_cand = max(evaluated, key=lambda c: (c["test_raw"], -c["literals"]))
 
     if top_cand:
         rec["top_tree"] = top_cand["tree"]

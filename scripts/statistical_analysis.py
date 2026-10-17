@@ -395,7 +395,7 @@ def mode_noisy(path):
         return
     noise_rates = sorted(list({r.get("noise_rate", 0.10) for r in recs}))
     for nr in noise_rates:
-        sub = [r for r in recs if r.get("noise_rate", 0.10) == nr and r.get("status") == "ok"]
+        sub = [r for r in recs if r.get("noise_rate", 0.10) == nr and (r.get("status") == "ok" or r.get("test_raw") is not None)]
         arms = sorted(list({r["arm"] for r in sub}))
         print(f"\n== Noisy Benchmark on Majority5 ({int(nr*100)}% label noise, {len(sub)} runs) ==")
 
@@ -434,10 +434,11 @@ def mode_noisy(path):
         test_res = []
         for a, b in contrasts:
             if a in tbl and b in tbl:
-                common = sorted(set(tbl[a].keys()) & set(tbl[b].keys()))
+                common = sorted([s for s in (set(tbl[a].keys()) & set(tbl[b].keys()))
+                                 if tbl[a][s].get("test_raw") is not None and tbl[b][s].get("test_raw") is not None])
                 if len(common) >= 3:
-                    va = np.array([tbl[a][s]["test_raw"] for s in common])
-                    vb = np.array([tbl[b][s]["test_raw"] for s in common])
+                    va = np.array([float(tbl[a][s]["test_raw"]) for s in common])
+                    vb = np.array([float(tbl[b][s]["test_raw"]) for s in common])
                     test_res.append((a, b, common, paired(va, vb)))
         if test_res:
             pvals = [t["p"] for _, _, _, t in test_res]
@@ -448,10 +449,11 @@ def mode_noisy(path):
         print("\n  Paired Differences on Literals / Code Bloat:")
         for a, b in contrasts:
             if a in tbl and b in tbl:
-                common = sorted(set(tbl[a].keys()) & set(tbl[b].keys()))
+                common = sorted([s for s in (set(tbl[a].keys()) & set(tbl[b].keys()))
+                                 if tbl[a][s].get("literals") is not None and tbl[b][s].get("literals") is not None])
                 if len(common) >= 3:
-                    va = np.array([tbl[a][s]["literals"] for s in common])
-                    vb = np.array([tbl[b][s]["literals"] for s in common])
+                    va = np.array([float(tbl[a][s]["literals"]) for s in common])
+                    vb = np.array([float(tbl[b][s]["literals"]) for s in common])
                     t = paired(va, vb)
                     print(f"    {a} vs {b} (n={len(comm)}): {fmt(t)}")
 

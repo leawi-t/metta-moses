@@ -188,5 +188,11 @@ $optimDeme
 
 (= (printExemplar (mkExemplar $tree $demeId $cscore $bscore)) (println! (Tree: (preOrder $tree) CScore: $cscore Bscore: $bscore)))
 (= (cleanedExemplar (mkExemplar $tree $demeId $cscore (mkBScore $bscore))) ((preOrder $tree) (List.sum $bscore)))
+(= (cleanedExemplars ()) ())
+(= (cleanedExemplars (cons (mkExemplar $tree $demeId $cscore (mkBScore $bscore)) $rest))
+   (cons ((preOrder $tree) (List.sum $bscore)) (cleanedExemplars $rest)))
+(= (cleanedExemplars (cons $x $rest))
+   (cleanedExemplars $rest))
+(= (cleanedExemplars $xs) (mapG cleanedExemplar $xs))
 
 (= (printInstance (mkInst $inst)) (println! (List.listToExpr $inst)))

@@ -216,8 +216,10 @@
         ($baseRatioFinal (if (or (== (param stallRelaxationMode) False) (== (param stallRelaxationMode) ()))
                              (param complexityRatio)
                              (param baseComplexityRatio)))
-        ($rescoredResult (rescoreMetapop $result $baseRatioFinal))
-        ($newR (mapG cleanedExemplar $rescoredResult))
+        ($rescoredResult (if (or (== (param stallRelaxationMode) False) (== (param stallRelaxationMode) ()))
+                             $result
+                             (rescoreMetapop $result $baseRatioFinal)))
+        ($newR (cleanedExemplars $rescoredResult))
         ($_sum (py-call (logger_helper.log_summary)))
         ($_ (cut)) ;; INFO: This gives few extra seconds performance gain. Do not remove.
       )

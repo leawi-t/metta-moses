@@ -50,13 +50,19 @@
         ((cons $only ())
          (if (isExemplarEligible $only)
              $only
-             (let $_ (println! "[VISITED] Only exemplar has reached its revisit limit. No eligible exemplar.")
+             (let* (
+                    ($_ (println! "[VISITED] Only exemplar has reached its revisit limit. No eligible exemplar."))
+                    ($_fb (py-call (visited_tracker.record_fallback)))
+                   )
                   (Error $metaPop (NO_EXEMPLAR)))))
         ($_ (let* (
                     ($eligible (filterEligibleExemplars $metaPop))
                     ($chosen (if (== $eligible ())
                                  ;; C++ parity: stop rather than fallback
-                                 (let $_ (println! "[VISITED] All exemplars at revisit limit. No eligible exemplar (C++ parity: select_exemplar returns end()).")
+                                 (let* (
+                                        ($_ (println! "[VISITED] All exemplars at revisit limit. No eligible exemplar (C++ parity: select_exemplar returns end())."))
+                                        ($_fb (py-call (visited_tracker.record_fallback)))
+                                       )
                                       (Error $metaPop (NO_EXEMPLAR)))
                                  (rouletteSelectFromPool $eligible)))
                   )

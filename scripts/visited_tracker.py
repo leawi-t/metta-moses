@@ -164,10 +164,14 @@ def record_visit(tree_expr):
     return _visit_counts[key]
 
 def record_fallback():
+    """Track instances where no eligible exemplar was found (metapop exhausted)."""
     global _fallback_count
     _fallback_count += 1
     print(f"(Step2-Fallback Count: {_fallback_count})", flush=True)
     return _fallback_count
+
+# Alias for C++ parity terminology
+record_exhaustion = record_fallback
 
 def get_fallback_count():
     return _fallback_count

@@ -7,9 +7,12 @@
 (= (INV_TEMP) (/ 100.0 (param compxyTemp)))
 
 ;; Visited tracking helpers:
-;; An exemplar is eligible if its canonical tree visit count is strictly below maxRevisits.
+;; An exemplar is eligible if its visit count satisfies C++ revisit semantics:
+;;   revisit < 0  => always eligible (unbounded)
+;;   revisit >= 0 => eligible iff count <= revisit
+;;   (so revisit=0 means exactly 1 visit total, matching C++ default)
 (= (isExemplarEligible (mkExemplar $tree $demeId $cscore $bscore))
-   (== (py-call (visited_tracker.is_eligible (preOrder $tree) (param maxRevisits))) 1))
+   (== (py-call (visited_tracker.is_eligible (preOrder $tree) (param revisit))) 1))
 
 (= (filterEligibleExemplars ()) ())
 (= (filterEligibleExemplars (cons $x $xs))
@@ -34,26 +37,27 @@
                   )
                   (rouletteSelect $pool $normalizedProbs $sum) )))))
 
-;; exemplar  selection
-;; if the the metapopulation is empty - throw error and quit
-;; if only one exemplar in the metapopulation select that
-;; if more than one exemplar in mp:
-;; filter the valid exemplars (non visited) -
-;; get the max penalized score and 
+;; exemplar selection (C++ parity)
+;; * Empty metapop              -> NO_EXEMPLAR error
+;; * Single exemplar            -> select if eligible; NO_EXEMPLAR if not (C++ shortcut)
+;; * Multiple exemplars         -> filter eligible; if empty return NO_EXEMPLAR
+;;                                 (C++ select_exemplar returns end())
 ; (: selectExemplar (-> (OS (Exemplar $a)) (Exemplar $a)))
-;; exemplar selection with visited tracking and canonicalization:
-;; skips exemplars (and their syntactic permutations) that reached maxRevisits
 (= (selectExemplar $metaPop)
     (case $metaPop
         ((() (Error $metaPop (NO_EXEMPLAR)))
+        ;; C++ shortcut: single-exemplar metapop
+        ((cons $only ())
+         (if (isExemplarEligible $only)
+             $only
+             (let $_ (println! "[VISITED] Only exemplar has reached its revisit limit. No eligible exemplar.")
+                  (Error $metaPop (NO_EXEMPLAR)))))
         ($_ (let* (
                     ($eligible (filterEligibleExemplars $metaPop))
                     ($chosen (if (== $eligible ())
-                                 (let* (
-                                        ($_ (println! "[VISITED] All exemplars at revisit limit! Falling back to metapop."))
-                                        ($_fb (py-call (visited_tracker.record_fallback)))
-                                       )
-                                       (rouletteSelectFromPool $metaPop))
+                                 ;; C++ parity: stop rather than fallback
+                                 (let $_ (println! "[VISITED] All exemplars at revisit limit. No eligible exemplar (C++ parity: select_exemplar returns end()).")
+                                      (Error $metaPop (NO_EXEMPLAR)))
                                  (rouletteSelectFromPool $eligible)))
                   )
                   $chosen)))))

@@ -2,6 +2,9 @@ import collections
 
 _visit_counts = collections.defaultdict(int)
 _fallback_count = 0
+# Memoization cache: raw string -> canonical key string.
+# Avoids re-parsing the same tree expression on every eligibility check.
+_key_cache = {}
 
 def parse_sexpr(s):
     if not isinstance(s, str):
@@ -110,22 +113,50 @@ def tree_to_str(node):
     return str(node)
 
 def get_canonical_key(tree_expr):
+    """Return the canonical string key for *tree_expr*.
+
+    Strings are memoized so that repeated eligibility checks on the same raw
+    s-expression string do not re-invoke the full parse + canonicalize pipeline.
+    List/tuple inputs are not memoized (they are transient call-site objects).
+    """
+    if isinstance(tree_expr, str):
+        cached = _key_cache.get(tree_expr)
+        if cached is not None:
+            return cached
+        key = tree_to_str(canonicalize_tree(tree_expr))
+        _key_cache[tree_expr] = key
+        return key
     return tree_to_str(canonicalize_tree(tree_expr))
 
 def reset():
-    global _visit_counts, _fallback_count
+    """Clear all visit counts, fallback counter, and the key cache.
+    Call this at the start of each run/seed to prevent state leaking across runs.
+    """
+    global _visit_counts, _fallback_count, _key_cache
     _visit_counts.clear()
     _fallback_count = 0
+    _key_cache.clear()
     return True
 
 def get_visit_count(tree_expr):
     key = get_canonical_key(tree_expr)
     return _visit_counts[key]
 
-def is_eligible(tree_expr, max_revisits=1):
+def is_eligible(tree_expr, revisit=0):
+    """Return 1 if the exemplar is eligible for selection, 0 otherwise.
+
+    Mirrors C++ MOSES ``metapop_parameters::revisit`` semantics exactly:
+      * revisit < 0  — unbounded revisits; always eligible.
+      * revisit == 0 — allow exactly 1 visit (default, same as C++ default).
+      * revisit == N — allow N+1 visits total (N additional revisits).
+
+    Eligibility condition: ``revisit < 0  or  count <= revisit``
+    """
+    if revisit < 0:
+        return 1  # unbounded — always eligible
     key = get_canonical_key(tree_expr)
     count = _visit_counts[key]
-    return 1 if count < max_revisits else 0
+    return 1 if count <= revisit else 0
 
 def record_visit(tree_expr):
     key = get_canonical_key(tree_expr)

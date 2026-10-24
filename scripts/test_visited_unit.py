@@ -51,28 +51,50 @@ def test_canonicalization():
 
     print("\nAll canonicalization unit tests passed!")
 
-    # Test visit tracking, fallback, and eligibility
+
+def test_visit_tracking():
+    """Tests for C++ MOSES revisit semantics.
+
+    C++ metapop_parameters::revisit:
+      revisit < 0  => always eligible (unbounded)
+      revisit == 0 => allow exactly 1 visit total  (C++ default)
+      revisit == N => allow N+1 visits total
+    Eligibility condition: revisit < 0 OR count <= revisit
+    """
     visited_tracker.reset()
-    assert visited_tracker.is_eligible('(AND A B)', max_revisits=1) == 1
-    visited_tracker.record_visit('(AND B A)') # record permutation
+
+    # revisit=0: eligible before first visit, ineligible after
+    assert visited_tracker.is_eligible('(AND A B)', revisit=0) == 1, "Should be eligible before any visit"
+    visited_tracker.record_visit('(AND B A)')  # sibling permutation => same canonical key
     assert visited_tracker.get_visit_count('(AND A B)') == 1
-    assert visited_tracker.is_eligible('(AND A B)', max_revisits=1) == 0
-    assert visited_tracker.is_eligible('(AND B A)', max_revisits=1) == 0
-    assert visited_tracker.is_eligible('(AND A B)', max_revisits=2) == 1
+    assert visited_tracker.is_eligible('(AND A B)', revisit=0) == 0, "Should be ineligible after 1 visit (revisit=0)"
+    assert visited_tracker.is_eligible('(AND B A)', revisit=0) == 0, "Permutation should also be ineligible"
 
-    # Fallback test
-    assert visited_tracker.get_fallback_count() == 0
-    visited_tracker.record_fallback()
-    assert visited_tracker.get_fallback_count() == 1
-    visited_tracker.record_fallback()
-    assert visited_tracker.get_fallback_count() == 2
+    # revisit=1: allows 2 visits total
+    assert visited_tracker.is_eligible('(AND A B)', revisit=1) == 1, "revisit=1 allows 2nd visit (count=1 <= revisit=1)"
+    visited_tracker.record_visit('(AND A B)')  # 2nd visit
+    assert visited_tracker.get_visit_count('(AND A B)') == 2
+    assert visited_tracker.is_eligible('(AND A B)', revisit=1) == 0, "Should be ineligible after 2 visits (revisit=1)"
 
-    # Reset test
+    # revisit=-1: always eligible (unbounded)
+    assert visited_tracker.is_eligible('(AND A B)', revisit=-1) == 1, "revisit<0 means unbounded, always eligible"
+    visited_tracker.record_visit('(AND A B)')  # 3rd visit
+    assert visited_tracker.is_eligible('(AND A B)', revisit=-1) == 1, "Still eligible after 3rd visit (unbounded)"
+
+    # Reset test: clears counts AND the key cache
     visited_tracker.reset()
     assert visited_tracker.get_visit_count('(AND A B)') == 0
     assert visited_tracker.get_fallback_count() == 0
-    assert visited_tracker.is_eligible('(AND A B)', max_revisits=1) == 1
-    print("All visit tracking and fallback tests passed!")
+    assert visited_tracker.is_eligible('(AND A B)', revisit=0) == 1, "Should be eligible after reset"
+    # Cache test: memoized key should survive reset correctly
+    key1 = visited_tracker.get_canonical_key('(AND B A)')
+    key2 = visited_tracker.get_canonical_key('(AND A B)')
+    assert key1 == key2, "Memoized canonical keys must be equal for permutations"
+
+    print("All visit tracking tests passed!")
+
 
 if __name__ == '__main__':
     test_canonicalization()
+    test_visit_tracking()
+

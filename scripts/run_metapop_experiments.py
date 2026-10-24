@@ -216,9 +216,9 @@ def run_single_seed(problem, cond_key, seed, max_gen, out_dir, timeout=900):
     )
     return result
 
-def run_condition_benchmark(problem, cond_key, count=30, max_gen=50, max_workers=2):
+def run_condition_benchmark(problem, cond_key, count=30, max_gen=50, max_workers=2, data_dir="experiments/data"):
     cond_info = CONDITIONS[cond_key]
-    out_dir = os.path.join(REPO_DIR, "experiments", "data", problem, cond_key)
+    out_dir = os.path.join(REPO_DIR, data_dir, problem, cond_key)
     os.makedirs(out_dir, exist_ok=True)
     
     print("=" * 80)
@@ -290,6 +290,7 @@ def main():
     parser.add_argument("--count", type=int, default=30)
     parser.add_argument("--max_gen", type=int, default=50)
     parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--data_dir", type=str, default="experiments/data")
     args = parser.parse_args()
     
     if "all" in args.problem:
@@ -308,6 +309,7 @@ def main():
     print(f"Seeds/Cond:  {args.count}")
     print(f"MaxGen:      {args.max_gen}")
     print(f"Workers:     {args.workers}")
+    print(f"Data Dir:    {args.data_dir}")
     print("=" * 80, flush=True)
     
     overall_summaries = {}
@@ -318,7 +320,8 @@ def main():
                 cond_key=cond,
                 count=args.count,
                 max_gen=args.max_gen,
-                max_workers=args.workers
+                max_workers=args.workers,
+                data_dir=args.data_dir
             )
             overall_summaries[f"{prob}_{cond}"] = {
                 "exact_solve_rate": sum_res["exact_solve_rate"],

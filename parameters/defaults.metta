@@ -102,6 +102,7 @@
 
 ;; ---- Exemplar selection ----
 !(add-atom &params (compxyTemp 6))
+!(add-atom &params (maxRevisits 1))
 
 ;; ---- Caching ----
 !(add-atom &params (defaultCacheSize 60))

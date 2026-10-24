@@ -56,6 +56,7 @@
     ;; ($_ (println! $exemplar))
     ;; ($_ (println! "getting exemplar tree"))
     ($tree (getExemplarTree $exemplar)) 
+    ($_rec (py-call (visited_tracker.record_visit (preOrder $tree))))
     ($_ (println! (SelectedTree: (preOrder $tree))))
     ;; ($_ (println! "creating deme IDs"))
     ($demeIds (createDemeIds $nExpansion $nDeme))

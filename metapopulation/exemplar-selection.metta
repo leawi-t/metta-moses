@@ -27,10 +27,20 @@
                     ($hstScr (List.max $probs))
                     ;; get list of normalized ScoreT values
                     ($normalizedProbs (normalizeProbs (INV_TEMP) $hstScr $probs))
+                    ;; ($pr (println! (NotNormalized: $probs)))
+                    ;; ($pr (println! (Normalized Probs: $normalizedProbs)))
                     ($sum (List.sum $normalizedProbs))
+                    ;; ($pr (println! (HstScr: $hstScr Sum: $sum)))
                   )
                   (rouletteSelect $pool $normalizedProbs $sum) )))))
 
+;; exemplar  selection
+;; if the the metapopulation is empty - throw error and quit
+;; if only one exemplar in the metapopulation select that
+;; if more than one exemplar in mp:
+;; filter the valid exemplars (non visited) -
+;; get the max penalized score and 
+; (: selectExemplar (-> (OS (Exemplar $a)) (Exemplar $a)))
 ;; exemplar selection with visited tracking and canonicalization:
 ;; skips exemplars (and their syntactic permutations) that reached maxRevisits
 (= (selectExemplar $metaPop)
